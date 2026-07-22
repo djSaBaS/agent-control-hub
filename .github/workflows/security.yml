@@ -84,24 +84,75 @@ jobs:
       - name: "1 · Descargar el repositorio"
         uses: actions/checkout@v6
 
+      # Comprueba si el repositorio tiene Dependency Graph disponible.
+      - name: "2 · Comprobar disponibilidad de Dependency Graph"
+        id: dependency_graph
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          REPOSITORY: "${{ github.repository }}"
+        run: |
+          set -euo pipefail
+          status_code="$(
+            curl \
+              --silent \
+              --show-error \
+              --output /tmp/dependency-sbom.json \
+              --write-out "%{http_code}" \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${REPOSITORY}/dependency-graph/sbom"
+          )"
+
+          case "${status_code}" in
+            200)
+              echo "enabled=true" >> "$GITHUB_OUTPUT"
+              echo "Dependency Graph está habilitado y se ejecutará la revisión."
+              ;;
+            403|404)
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              echo "Dependency Graph no está habilitado o no está disponible para este token."
+              ;;
+            *)
+              echo "No se pudo comprobar Dependency Graph. Código HTTP: ${status_code}."
+              exit 1
+              ;;
+          esac
+
       # Bloquea dependencias nuevas con vulnerabilidades moderadas o superiores.
-      - name: "2 · Revisar dependencias modificadas"
+      - name: "3 · Revisar dependencias modificadas"
         id: dependency_review
+        if: steps.dependency_graph.outputs.enabled == 'true'
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
           comment-summary-in-pr: always
 
+      # Explica por qué se omite la revisión cuando falta Dependency Graph.
+      - name: "4 · Informar de revisión omitida"
+        if: steps.dependency_graph.outputs.enabled != 'true'
+        run: |
+          echo "La revisión de dependencias se ha omitido porque Dependency Graph no está habilitado."
+          echo "Actívalo en Settings > Security > Code security and analysis para convertir esta comprobación en bloqueante."
+
       # Explica dónde queda el informe de dependencias.
-      - name: "3 · Publicar resumen de dependencias"
+      - name: "5 · Publicar resumen de dependencias"
         if: always()
         run: |
           {
             echo "## Revisión de dependencias"
             echo ""
-            echo "Resultado: \`${{ steps.dependency_review.outcome }}\`"
+            echo "Dependency Graph disponible: \`${{ steps.dependency_graph.outputs.enabled || 'false' }}\`"
             echo ""
-            echo "La acción revisa únicamente dependencias añadidas o modificadas por este pull request."
+            if [[ "${{ steps.dependency_graph.outputs.enabled }}" == "true" ]]; then
+              echo "Resultado de la revisión: \`${{ steps.dependency_review.outcome }}\`"
+              echo ""
+              echo "La acción revisó las dependencias añadidas o modificadas por este pull request."
+            else
+              echo "Resultado: \`omitido\`"
+              echo ""
+              echo "El workflow no falla por configuración ausente, pero conviene habilitar Dependency Graph en el repositorio."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Audita las dependencias Python instalables del servicio.
