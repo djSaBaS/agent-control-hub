@@ -5,6 +5,9 @@ import asyncio
 # Importa el tipo de función utilizado por monkeypatch.
 from collections.abc import Callable
 
+# Importa el tipo oficial del fixture de sustitución.
+from pytest import MonkeyPatch
+
 # Importa el adaptador sometido a prueba.
 from agent_control_hub.adapters.copilot import CopilotAdapter
 # Importa los estados normalizados esperados.
@@ -14,7 +17,7 @@ from agent_control_hub.models import AgentState
 # Comprueba el estado desconectado cuando no existe Copilot CLI.
 def test_copilot_is_offline_when_cli_is_missing(
     # Recibe el fixture de sustitución temporal de pytest.
-    monkeypatch: object,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     """Evita presentar Copilot como disponible sin ejecutable local."""
 
@@ -36,7 +39,7 @@ def test_copilot_is_offline_when_cli_is_missing(
 # Comprueba el estado disponible cuando se localiza Copilot CLI.
 def test_copilot_is_idle_when_cli_is_installed(
     # Recibe el fixture de sustitución temporal de pytest.
-    monkeypatch: object,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     """Declara disponibilidad sin inventar sesiones ni consumo."""
 
@@ -44,7 +47,9 @@ def test_copilot_is_idle_when_cli_is_installed(
     import agent_control_hub.adapters.copilot as copilot_module
 
     # Define una búsqueda simulada que devuelve una ruta válida.
-    installed_executable: Callable[[str], str | None] = lambda _name: "C:/Tools/copilot.exe"
+    installed_executable: Callable[[str], str | None] = (
+        lambda _name: "C:/Tools/copilot.exe"
+    )
     # Sustituye la función de búsqueda dentro del módulo.
     monkeypatch.setattr(copilot_module.shutil, "which", installed_executable)
     # Ejecuta la captura asíncrona del adaptador.
