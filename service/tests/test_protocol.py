@@ -1,11 +1,10 @@
 """Pruebas unitarias de la codificación NDJSON."""
 
-# Importa fechas deterministas para la prueba.
+# Importa fechas estándar deterministas para la prueba.
 from datetime import UTC, datetime
 
-# Importa el modelo mínimo requerido por el protocolo.
+# Importa el modelo mínimo y la función pública del protocolo.
 from agent_control_hub.models import DeviceSnapshot
-# Importa la función sometida a prueba.
 from agent_control_hub.protocol import encode_snapshot
 
 
