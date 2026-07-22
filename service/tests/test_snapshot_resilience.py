@@ -3,11 +3,9 @@
 # Importa asyncio para ejecutar las capturas asíncronas desde pytest.
 import asyncio
 
-# Importa el contrato que deben cumplir todos los adaptadores.
+# Importa el contrato, los modelos normalizados y el agregador sometido a prueba.
 from agent_control_hub.adapters.base import PlatformAdapter
-# Importa los modelos normalizados devueltos por los adaptadores.
 from agent_control_hub.models import AgentState, PlatformSnapshot
-# Importa el agregador que coordina todas las plataformas.
 from agent_control_hub.snapshot_service import SnapshotService
 
 
