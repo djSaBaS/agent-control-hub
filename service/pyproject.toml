@@ -21,6 +21,7 @@ dependencies = [
 dev = [
   "mypy>=1.10,<2",
   "pytest>=8.2,<9",
+  "pytest-cov>=6,<8",
   "ruff>=0.5,<1"
 ]
 
@@ -33,6 +34,27 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = [
+  "-ra",
+  "--strict-config",
+  "--strict-markers"
+]
+junit_family = "xunit2"
+
+[tool.coverage.run]
+branch = true
+source = ["agent_control_hub"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 70
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError"
+]
 
 [tool.ruff]
 line-length = 100
