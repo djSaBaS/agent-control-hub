@@ -1,11 +1,10 @@
 """Modelos de datos normalizados del servicio."""
 
-# Importa enumeraciones de texto para estados interoperables.
-from enum import StrEnum
-# Importa fechas con zona horaria para métricas y reinicios.
+# Importa fechas y enumeraciones estándar utilizadas por los modelos.
 from datetime import datetime
+from enum import StrEnum
 
-# Importa la clase base de validación de Pydantic.
+# Importa la clase base de validación y utilidades de Pydantic.
 from pydantic import BaseModel, ConfigDict, Field
 
 
