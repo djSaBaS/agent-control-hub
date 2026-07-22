@@ -1,13 +1,11 @@
 """Pruebas completas del contrato NDJSON enviado al dispositivo."""
 
-# Importa el analizador JSON de la biblioteca estándar.
+# Importa utilidades estándar para analizar JSON y construir fechas deterministas.
 import json
-# Importa fechas conscientes de zona horaria para datos deterministas.
 from datetime import UTC, datetime
 
-# Importa los modelos utilizados para construir una instantánea realista.
+# Importa los modelos normalizados y la función pública del protocolo.
 from agent_control_hub.models import AgentSnapshot, AgentState, DeviceSnapshot, PlatformSnapshot
-# Importa la función pública que codifica el protocolo.
 from agent_control_hub.protocol import encode_snapshot
 
 
