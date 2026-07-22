@@ -1,25 +1,17 @@
 """Punto de entrada del servicio Agent Control Hub."""
 
-# Importa herramientas para definir argumentos de línea de comandos.
+# Importa herramientas estándar para argumentos, asincronía, tiempo y rutas.
 import argparse
-# Importa el motor asíncrono utilizado por adaptadores.
 import asyncio
-# Importa utilidades de tiempo para el modo continuo.
 import time
-# Importa rutas para localizar la configuración local.
 from pathlib import Path
 
-# Importa la selección validada de conectores.
+# Importa la selección de conectores, configuración, protocolo, agregación y transporte.
 from agent_control_hub.adapter_factory import AdapterSelection, build_adapter_selection
-# Importa el adaptador de demostración forzado por consola.
 from agent_control_hub.adapters import MockAdapter
-# Importa la carga validada de preferencias.
 from agent_control_hub.config import load_settings
-# Importa el codificador del protocolo serie.
 from agent_control_hub.protocol import encode_snapshot
-# Importa el agregador de plataformas.
 from agent_control_hub.snapshot_service import SnapshotService
-# Importa el transporte USB serie.
 from agent_control_hub.transports import SerialTransport
 
 
@@ -116,13 +108,8 @@ def main(args: argparse.Namespace) -> int:
 
     # Carga y valida preferencias antes de iniciar conectores.
     settings = load_settings(args.config)
-    # Fuerza la demostración cuando se solicita expresamente.
-    if args.mock:
-        # Utiliza únicamente datos simulados.
-        selection = _build_mock_selection()
-    else:
-        # Construye conectores según la configuración validada.
-        selection = build_adapter_selection(settings)
+    # Selecciona datos simulados o conectores configurados según el argumento.
+    selection = _build_mock_selection() if args.mock else build_adapter_selection(settings)
     # Construye el agregador con monitorización y visibilidad separadas.
     service = SnapshotService(
         # Inyecta todos los conectores que deben consultarse.
