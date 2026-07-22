@@ -1,11 +1,10 @@
 """Pruebas de separación entre monitorización y salida física."""
 
-# Importa el ejecutor asíncrono utilizado por el servicio.
+# Importa el ejecutor asíncrono estándar utilizado por el servicio.
 import asyncio
 
-# Importa el adaptador determinista del proyecto.
+# Importa el adaptador determinista y el agregador sometido a prueba.
 from agent_control_hub.adapters.mock import MockAdapter
-# Importa el agregador sometido a prueba.
 from agent_control_hub.snapshot_service import SnapshotService
 
 
