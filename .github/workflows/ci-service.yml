@@ -99,12 +99,16 @@ jobs:
           set -euo pipefail
           python -m ruff format --check .
 
-      # Comprueba los tipos utilizando la configuración estricta del proyecto.
+      # Comprueba los tipos y conserva el diagnóstico completo como artefacto.
       - name: "8 · Comprobar tipado con MyPy"
         id: typing
         run: |
-          set -euo pipefail
-          python -m mypy src
+          set -o pipefail
+          mkdir -p test-results
+          python -m mypy src \
+            --show-error-codes \
+            --pretty \
+            2>&1 | tee test-results/mypy.log
 
       # Ejecuta pruebas, cobertura por ramas y genera un informe JUnit.
       - name: "9 · Ejecutar pruebas y cobertura"
@@ -124,12 +128,13 @@ jobs:
             --cov-fail-under=70
 
       # Conserva los informes aunque alguna validación haya fallado.
-      - name: "10 · Guardar informes de pruebas"
+      - name: "10 · Guardar informes de pruebas y tipado"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: "informes-python-${{ matrix.python-version }}"
           path: |
+            service/test-results/mypy.log
             service/test-results/pytest.xml
             service/test-results/coverage.xml
           if-no-files-found: warn
@@ -153,7 +158,7 @@ jobs:
             echo "| MyPy | \`${{ steps.typing.outcome }}\` |"
             echo "| Pytest y cobertura | \`${{ steps.tests.outcome }}\` |"
             echo ""
-            echo "Los informes JUnit y Coverage se guardan como artefactos durante 14 días."
+            echo "Los informes de MyPy, JUnit y Coverage se guardan como artefactos durante 14 días."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Añade una anotación clara cuando alguna comprobación no termina correctamente.
