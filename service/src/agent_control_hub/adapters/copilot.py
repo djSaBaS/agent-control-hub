@@ -1,11 +1,10 @@
 """Adaptador inicial para detectar GitHub Copilot CLI."""
 
-# Importa utilidades para localizar ejecutables instalados.
+# Importa utilidades estándar para localizar ejecutables instalados.
 import shutil
 
-# Importa el contrato común de adaptadores.
+# Importa el contrato común y los modelos normalizados del servicio.
 from agent_control_hub.adapters.base import PlatformAdapter
-# Importa los modelos normalizados del servicio.
 from agent_control_hub.models import AgentState, PlatformSnapshot
 
 
