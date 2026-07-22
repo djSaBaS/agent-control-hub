@@ -1,14 +1,13 @@
 """Pruebas del adaptador inicial de GitHub Copilot."""
 
-# Importa el ejecutor asíncrono para las capturas del adaptador.
+# Importa el ejecutor asíncrono estándar utilizado por las pruebas.
 import asyncio
 
 # Importa el tipo oficial del fixture de sustitución.
 from pytest import MonkeyPatch
 
-# Importa el adaptador sometido a prueba.
+# Importa el adaptador sometido a prueba y los estados normalizados esperados.
 from agent_control_hub.adapters.copilot import CopilotAdapter
-# Importa los estados normalizados esperados.
 from agent_control_hub.models import AgentState
 
 
