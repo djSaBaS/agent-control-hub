@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-control-hub"
+version = "0.1.0"
+description = "Local service for monitoring AI agents and sending normalized status to a physical display."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Juan Antonio Sánchez Plaza" }
+]
+dependencies = [
+  "pydantic>=2.8,<3",
+  "pyserial>=3.5,<4"
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10,<2",
+  "pytest>=8.2,<9",
+  "ruff>=0.5,<1"
+]
+
+[project.scripts]
+agent-control = "agent_control_hub.main:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["agent_control_hub"]
