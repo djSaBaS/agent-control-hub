@@ -1,0 +1,185 @@
+# Define el nombre visible del flujo de compilación del dispositivo.
+name: "CI · Firmware M5Stack"
+
+# Ejecuta el flujo cuando cambia el firmware o su configuración de CI.
+on:
+  # Valida los cambios integrados en la rama principal.
+  push:
+    branches:
+      - main
+    paths:
+      - "firmware/**"
+      - ".github/workflows/ci-firmware.yml"
+  # Valida el firmware antes de aceptar un pull request.
+  pull_request:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/ci-firmware.yml"
+  # Permite compilar manualmente desde la pestaña Actions.
+  workflow_dispatch:
+
+# Limita los permisos del flujo a la lectura del repositorio.
+permissions:
+  contents: read
+
+# Cancela compilaciones antiguas de la misma rama.
+concurrency:
+  group: "ci-firmware-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  # Compila cada dispositivo mediante una matriz independiente.
+  build:
+    name: "${{ matrix.device-name }} · compilar firmware"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Define el entorno correspondiente al M5Stack Core2.
+          - pio-environment: m5stack-core2
+            device-name: M5Stack Core2
+          # Define el entorno compartido por CoreS3, CoreS3 SE y CoreS3 Lite.
+          - pio-environment: m5stack-cores3
+            device-name: M5Stack CoreS3
+    defaults:
+      run:
+        working-directory: firmware/core2
+        shell: bash
+    env:
+      PIO_ENVIRONMENT: "${{ matrix.pio-environment }}"
+
+    steps:
+      # Descarga el commit que se debe compilar.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Prepara Python para ejecutar PlatformIO Core.
+      - name: "2 · Preparar Python"
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Conserva paquetes y toolchains descargados por PlatformIO.
+      - name: "3 · Restaurar caché de PlatformIO"
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: "${{ runner.os }}-platformio-${{ matrix.pio-environment }}-${{ hashFiles('firmware/core2/platformio.ini') }}"
+          restore-keys: |
+            ${{ runner.os }}-platformio-${{ matrix.pio-environment }}-
+            ${{ runner.os }}-platformio-
+
+      # Instala una versión reproducible de PlatformIO Core.
+      - name: "4 · Instalar PlatformIO"
+        id: platformio
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "platformio==6.1.19"
+
+      # Muestra la configuración que se utilizará para detectar errores de entorno.
+      - name: "5 · Mostrar diagnóstico de PlatformIO"
+        run: |
+          echo "::group::Información de PlatformIO"
+          pio --version
+          pio system info
+          echo "Entorno seleccionado: $PIO_ENVIRONMENT"
+          echo "Dispositivo: ${{ matrix.device-name }}"
+          echo "::endgroup::"
+
+      # Compila el firmware y conserva el log completo para diagnóstico.
+      - name: "6 · Compilar ${{ matrix.device-name }}"
+        id: build
+        run: |
+          set -o pipefail
+          mkdir -p ci-results
+          pio run -e "$PIO_ENVIRONMENT" 2>&1 | tee "ci-results/build-$PIO_ENVIRONMENT.log"
+
+      # Genera el informe de memoria flash y RAM del firmware.
+      - name: "7 · Analizar tamaño del firmware"
+        id: size
+        if: success()
+        run: |
+          set -o pipefail
+          pio run -e "$PIO_ENVIRONMENT" -t size 2>&1 | tee "ci-results/size-$PIO_ENVIRONMENT.log"
+
+      # Cuenta avisos y errores para mostrarlos en el resumen final.
+      - name: "8 · Analizar el log de compilación"
+        id: log_analysis
+        if: always()
+        run: |
+          BUILD_LOG="ci-results/build-$PIO_ENVIRONMENT.log"
+          WARNING_COUNT=0
+          ERROR_COUNT=0
+          if [[ -f "$BUILD_LOG" ]]; then
+            WARNING_COUNT=$(grep -Eic "warning:|warning " "$BUILD_LOG" || true)
+            ERROR_COUNT=$(grep -Eic "error:|fatal error:" "$BUILD_LOG" || true)
+          fi
+          echo "warnings=$WARNING_COUNT" >> "$GITHUB_OUTPUT"
+          echo "errors=$ERROR_COUNT" >> "$GITHUB_OUTPUT"
+          if [[ "$ERROR_COUNT" -gt 0 ]]; then
+            echo "::error title=Errores de firmware detectados::Se han localizado $ERROR_COUNT líneas de error en el log de $PIO_ENVIRONMENT. Descarga el artefacto para revisar el contexto completo."
+          fi
+          if [[ "$WARNING_COUNT" -gt 0 ]]; then
+            echo "::warning title=Avisos de compilación::$WARNING_COUNT avisos detectados para $PIO_ENVIRONMENT. Conviene revisarlos aunque la compilación haya terminado correctamente."
+          fi
+
+      # Reúne binarios, ELF, mapas y logs en una carpeta estable.
+      - name: "9 · Preparar artefactos"
+        if: always()
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="ci-results/artifacts-$PIO_ENVIRONMENT"
+          BUILD_DIR=".pio/build/$PIO_ENVIRONMENT"
+          mkdir -p "$ARTIFACT_DIR"
+          if [[ -d "$BUILD_DIR" ]]; then
+            find "$BUILD_DIR" -maxdepth 1 -type f \( \
+              -name "*.bin" -o \
+              -name "*.elf" -o \
+              -name "*.map" \
+            \) -exec cp {} "$ARTIFACT_DIR" \;
+          fi
+          find ci-results -maxdepth 1 -type f -name "*-$PIO_ENVIRONMENT.log" \
+            -exec cp {} "$ARTIFACT_DIR" \;
+
+      # Guarda los binarios y logs incluso cuando la compilación falla.
+      - name: "10 · Guardar firmware y logs"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "firmware-${{ matrix.pio-environment }}"
+          path: "firmware/core2/ci-results/artifacts-${{ matrix.pio-environment }}/"
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Publica un resumen claro para saber qué dispositivo ha fallado.
+      - name: "11 · Publicar resumen de firmware"
+        if: always()
+        run: |
+          {
+            echo "## Firmware · ${{ matrix.device-name }}"
+            echo ""
+            echo "**Entorno PlatformIO:** \`$PIO_ENVIRONMENT\`"
+            echo ""
+            echo "| Comprobación | Resultado |"
+            echo "|---|---|"
+            echo "| Instalación de PlatformIO | \`${{ steps.platformio.outcome }}\` |"
+            echo "| Compilación | \`${{ steps.build.outcome }}\` |"
+            echo "| Informe de tamaño | \`${{ steps.size.outcome }}\` |"
+            echo "| Avisos encontrados | ${{ steps.log_analysis.outputs.warnings || '0' }} |"
+            echo "| Errores encontrados | ${{ steps.log_analysis.outputs.errors || '0' }} |"
+            echo ""
+            echo "Los binarios y logs se encuentran en el artefacto \`firmware-${{ matrix.pio-environment }}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Explica el orden recomendado para localizar problemas de compilación.
+      - name: "12 · Explicar cómo localizar un fallo"
+        if: failure()
+        run: |
+          echo "::error title=Compilación de firmware fallida::Revisa primero el paso 6. El primer 'error:' suele ser la causa real; los errores posteriores suelen ser consecuencia. Comprueba también que el nombre del entorno exista en platformio.ini y descarga el log completo."

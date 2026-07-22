@@ -1,0 +1,175 @@
+# Define el nombre visible de las comprobaciones de seguridad.
+name: "Seguridad · Código y dependencias"
+
+# Ejecuta análisis ante cambios relevantes y de forma programada.
+on:
+  # Analiza la rama principal después de cada cambio.
+  push:
+    branches:
+      - main
+    paths:
+      - "service/**"
+      - ".github/workflows/security.yml"
+  # Analiza los cambios antes de integrarlos.
+  pull_request:
+    paths:
+      - "service/**"
+      - ".github/workflows/security.yml"
+      - "service/pyproject.toml"
+  # Ejecuta un análisis semanal cada lunes a las 06:00 UTC.
+  schedule:
+    - cron: "0 6 * * 1"
+  # Permite ejecutar el análisis manualmente.
+  workflow_dispatch:
+
+# Evita duplicar análisis de seguridad de la misma referencia.
+concurrency:
+  group: "security-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  # Ejecuta el análisis semántico oficial de GitHub para Python.
+  codeql:
+    name: "CodeQL · Python"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      # Descarga el código que se analizará.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Inicializa CodeQL con consultas de seguridad ampliadas.
+      - name: "2 · Inicializar CodeQL"
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          queries: security-extended
+
+      # Analiza el código y publica los resultados en Security > Code scanning.
+      - name: "3 · Analizar y publicar resultados"
+        id: codeql_analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:python"
+
+      # Deja constancia del destino de los resultados.
+      - name: "4 · Publicar resumen de CodeQL"
+        if: always()
+        run: |
+          {
+            echo "## Análisis CodeQL"
+            echo ""
+            echo "Resultado: \`${{ steps.codeql_analysis.outcome }}\`"
+            echo ""
+            echo "Los hallazgos aparecen en **Security > Code scanning alerts**."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Revisa cambios de dependencias introducidos por un pull request.
+  dependency-review:
+    name: "Revisión de dependencias del PR"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      # Descarga el repositorio para contextualizar el cambio.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Bloquea dependencias nuevas con vulnerabilidades moderadas o superiores.
+      - name: "2 · Revisar dependencias modificadas"
+        id: dependency_review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: always
+
+      # Explica dónde queda el informe de dependencias.
+      - name: "3 · Publicar resumen de dependencias"
+        if: always()
+        run: |
+          {
+            echo "## Revisión de dependencias"
+            echo ""
+            echo "Resultado: \`${{ steps.dependency_review.outcome }}\`"
+            echo ""
+            echo "La acción revisa únicamente dependencias añadidas o modificadas por este pull request."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Audita las dependencias Python instalables del servicio.
+  pip-audit:
+    name: "Auditoría de dependencias Python"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: service
+        shell: bash
+
+    steps:
+      # Descarga la versión exacta del servicio.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Prepara una versión estable de Python.
+      - name: "2 · Preparar Python"
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: service/pyproject.toml
+
+      # Instala el servicio y la herramienta de auditoría.
+      - name: "3 · Instalar servicio y auditor"
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pip-audit
+
+      # Ejecuta la auditoría y conserva una salida JSON para diagnóstico.
+      - name: "4 · Buscar vulnerabilidades conocidas"
+        id: audit
+        run: |
+          set -o pipefail
+          mkdir -p security-results
+          python -m pip_audit \
+            --local \
+            --skip-editable \
+            --desc \
+            --format json \
+            --output security-results/pip-audit.json
+          python -m pip_audit --local --skip-editable --desc
+
+      # Conserva el resultado aunque se detecten vulnerabilidades.
+      - name: "5 · Guardar informe de auditoría"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-pip-audit
+          path: service/security-results/pip-audit.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Publica una explicación en español del resultado.
+      - name: "6 · Publicar resumen de auditoría"
+        if: always()
+        run: |
+          {
+            echo "## Auditoría de dependencias Python"
+            echo ""
+            echo "Resultado: \`${{ steps.audit.outcome }}\`"
+            echo ""
+            echo "El informe JSON se guarda como artefacto durante 30 días."
+            echo "Si falla, revisa el paquete afectado, la versión instalada y la versión corregida indicada por pip-audit."
+          } >> "$GITHUB_STEP_SUMMARY"

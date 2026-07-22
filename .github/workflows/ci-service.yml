@@ -1,0 +1,229 @@
+# Define el nombre visible del flujo en la pestaña Actions.
+name: "CI · Servicio Python"
+
+# Ejecuta la validación cuando cambia el servicio o el propio workflow.
+on:
+  # Valida los cambios enviados a la rama principal.
+  push:
+    branches:
+      - main
+    paths:
+      - "service/**"
+      - ".github/workflows/ci-service.yml"
+  # Valida los cambios propuestos mediante pull request.
+  pull_request:
+    paths:
+      - "service/**"
+      - ".github/workflows/ci-service.yml"
+  # Permite lanzar la comprobación manualmente desde GitHub.
+  workflow_dispatch:
+
+# Concede únicamente permiso de lectura al código del repositorio.
+permissions:
+  contents: read
+
+# Cancela ejecuciones anteriores de la misma rama cuando llega un cambio nuevo.
+concurrency:
+  group: "ci-service-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  # Ejecuta estilo, tipado y pruebas en las versiones soportadas de Python.
+  quality:
+    name: "Python ${{ matrix.python-version }} · calidad y pruebas"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+    defaults:
+      run:
+        working-directory: service
+        shell: bash
+
+    steps:
+      # Descarga exactamente el código asociado al commit o pull request.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Instala la versión de Python correspondiente y activa la caché de pip.
+      - name: "2 · Preparar Python ${{ matrix.python-version }}"
+        uses: actions/setup-python@v6
+        with:
+          python-version: "${{ matrix.python-version }}"
+          cache: pip
+          cache-dependency-path: service/pyproject.toml
+
+      # Muestra versiones y rutas para facilitar el diagnóstico del entorno.
+      - name: "3 · Mostrar información del entorno"
+        run: |
+          echo "::group::Información del sistema"
+          python --version
+          python -m pip --version
+          pwd
+          echo "Commit analizado: $GITHUB_SHA"
+          echo "Evento: $GITHUB_EVENT_NAME"
+          echo "::endgroup::"
+
+      # Instala el paquete en modo editable junto con sus herramientas de desarrollo.
+      - name: "4 · Instalar dependencias"
+        id: dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[dev]"
+          python -m pip check
+
+      # Comprueba que todos los módulos Python se puedan compilar.
+      - name: "5 · Comprobar sintaxis Python"
+        id: compile
+        run: |
+          set -euo pipefail
+          python -m compileall -q src tests
+
+      # Detecta errores de estilo, imports y malas prácticas mediante Ruff.
+      - name: "6 · Analizar calidad con Ruff"
+        id: lint
+        run: |
+          set -euo pipefail
+          python -m ruff check . --output-format=github
+
+      # Evita que entren archivos con un formato distinto al acordado.
+      - name: "7 · Comprobar formato con Ruff"
+        id: format
+        run: |
+          set -euo pipefail
+          python -m ruff format --check .
+
+      # Comprueba los tipos utilizando la configuración estricta del proyecto.
+      - name: "8 · Comprobar tipado con MyPy"
+        id: typing
+        run: |
+          set -euo pipefail
+          python -m mypy src
+
+      # Ejecuta pruebas, cobertura por ramas y genera un informe JUnit.
+      - name: "9 · Ejecutar pruebas y cobertura"
+        id: tests
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          python -m pytest \
+            -ra \
+            --strict-config \
+            --strict-markers \
+            --junitxml=test-results/pytest.xml \
+            --cov=agent_control_hub \
+            --cov-branch \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=xml:test-results/coverage.xml \
+            --cov-fail-under=70
+
+      # Conserva los informes aunque alguna validación haya fallado.
+      - name: "10 · Guardar informes de pruebas"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "informes-python-${{ matrix.python-version }}"
+          path: |
+            service/test-results/pytest.xml
+            service/test-results/coverage.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Publica un resumen legible en español dentro de GitHub Actions.
+      - name: "11 · Publicar resumen de la ejecución"
+        if: always()
+        run: |
+          {
+            echo "## Resultado del servicio Python"
+            echo ""
+            echo "**Python:** ${{ matrix.python-version }}"
+            echo ""
+            echo "| Comprobación | Resultado |"
+            echo "|---|---|"
+            echo "| Dependencias | \`${{ steps.dependencies.outcome }}\` |"
+            echo "| Sintaxis | \`${{ steps.compile.outcome }}\` |"
+            echo "| Ruff · calidad | \`${{ steps.lint.outcome }}\` |"
+            echo "| Ruff · formato | \`${{ steps.format.outcome }}\` |"
+            echo "| MyPy | \`${{ steps.typing.outcome }}\` |"
+            echo "| Pytest y cobertura | \`${{ steps.tests.outcome }}\` |"
+            echo ""
+            echo "Los informes JUnit y Coverage se guardan como artefactos durante 14 días."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Añade una anotación clara cuando alguna comprobación no termina correctamente.
+      - name: "12 · Explicar cómo localizar un fallo"
+        if: failure()
+        run: |
+          echo "::error title=Validación Python fallida::Abre el primer paso en rojo. Ruff indica archivo y línea; MyPy indica el tipo incompatible; Pytest muestra la prueba, la excepción y la traza. Descarga también el artefacto informes-python-${{ matrix.python-version }}."
+
+  # Comprueba que el servicio pueda distribuirse como paquete instalable.
+  package:
+    name: "Construir paquete Python"
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: service
+        shell: bash
+
+    steps:
+      # Descarga el código validado por el trabajo anterior.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Prepara la versión mínima soportada por el proyecto.
+      - name: "2 · Preparar Python 3.11"
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: service/pyproject.toml
+
+      # Instala únicamente las herramientas necesarias para construir el paquete.
+      - name: "3 · Instalar herramientas de empaquetado"
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip build twine
+
+      # Genera el paquete fuente y la distribución wheel.
+      - name: "4 · Construir distribuciones"
+        id: build_package
+        run: |
+          set -euo pipefail
+          python -m build
+
+      # Verifica metadatos, README y estructura de las distribuciones.
+      - name: "5 · Validar distribuciones"
+        id: validate_package
+        run: |
+          set -euo pipefail
+          python -m twine check dist/*
+
+      # Guarda las distribuciones para comprobarlas o usarlas posteriormente.
+      - name: "6 · Guardar paquete construido"
+        uses: actions/upload-artifact@v4
+        with:
+          name: servicio-python-distribuciones
+          path: service/dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      # Resume el resultado del empaquetado.
+      - name: "7 · Publicar resumen del paquete"
+        if: always()
+        run: |
+          {
+            echo "## Paquete Python"
+            echo ""
+            echo "| Comprobación | Resultado |"
+            echo "|---|---|"
+            echo "| Construcción | \`${{ steps.build_package.outcome }}\` |"
+            echo "| Validación de metadatos | \`${{ steps.validate_package.outcome }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
