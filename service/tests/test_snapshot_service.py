@@ -1,13 +1,11 @@
 """Pruebas unitarias del agregador de adaptadores."""
 
-# Importa el ejecutor asíncrono para la prueba síncrona.
+# Importa el ejecutor asíncrono estándar utilizado por la prueba.
 import asyncio
 
-# Importa el adaptador de demostración.
+# Importa el adaptador simulado, el estado esperado y el servicio sometido a prueba.
 from agent_control_hub.adapters.mock import MockAdapter
-# Importa el estado normalizado esperado.
 from agent_control_hub.models import AgentState
-# Importa el servicio sometido a prueba.
 from agent_control_hub.snapshot_service import SnapshotService
 
 
