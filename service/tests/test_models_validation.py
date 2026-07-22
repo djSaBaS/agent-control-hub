@@ -1,11 +1,10 @@
 """Pruebas de validación de los modelos normalizados."""
 
-# Importa fechas conscientes de zona horaria para crear instantáneas válidas.
+# Importa fechas estándar para crear instantáneas válidas.
 from datetime import UTC, datetime
 
-# Importa pytest para comprobar errores de validación esperados.
+# Importa herramientas de prueba y la excepción pública de Pydantic.
 import pytest
-# Importa la excepción pública emitida por Pydantic.
 from pydantic import ValidationError
 
 # Importa los modelos y estados que forman el contrato del servicio.
