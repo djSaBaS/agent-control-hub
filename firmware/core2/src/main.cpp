@@ -2,6 +2,8 @@
 #include <ArduinoJson.h>
 // Importa la biblioteca unificada del hardware M5Stack.
 #include <M5Unified.h>
+// Importa la capa de entrada independiente del dispositivo.
+#include "input.h"
 // Importa las funciones y modelos de la interfaz.
 #include "ui.h"
 
@@ -138,39 +140,49 @@ static void readSerialMessages() {
     }
 }
 
-// Gestiona los tres controles capacitivos del Core2.
-static void handleButtons() {
-    // Cambia al resumen cuando se pulsa el control A.
-    if (M5.BtnA.wasPressed()) {
-        // Selecciona la pantalla principal.
-        currentScreen = ScreenId::Dashboard;
-        // Redibuja el resumen inmediatamente.
-        drawScreen(currentScreen, viewModel);
+// Aplica una acción de navegación normalizada a la interfaz.
+static void handleNavigation() {
+    // Obtiene una única acción desde botones, tacto o futuros controles externos.
+    const NavigationAction action = readNavigationAction();
+    // Selecciona la respuesta correspondiente a la acción recibida.
+    switch (action) {
+        // Mantiene la pantalla cuando no existe una acción nueva.
+        case NavigationAction::None:
+            // Finaliza sin redibujar para evitar trabajo innecesario.
+            return;
+        // Abre el resumen global.
+        case NavigationAction::ShowDashboard:
+            // Selecciona la pantalla principal.
+            currentScreen = ScreenId::Dashboard;
+            // Finaliza la selección de la acción.
+            break;
+        // Abre la actividad de agentes.
+        case NavigationAction::ShowAgents:
+            // Selecciona la pantalla de agentes.
+            currentScreen = ScreenId::Agents;
+            // Finaliza la selección de la acción.
+            break;
+        // Abre la configuración local.
+        case NavigationAction::ShowSettings:
+            // Selecciona la pantalla de configuración.
+            currentScreen = ScreenId::Settings;
+            // Finaliza la selección de la acción.
+            break;
     }
-    // Cambia a agentes cuando se pulsa el control B.
-    if (M5.BtnB.wasPressed()) {
-        // Selecciona la pantalla de agentes.
-        currentScreen = ScreenId::Agents;
-        // Redibuja la actividad inmediatamente.
-        drawScreen(currentScreen, viewModel);
-    }
-    // Cambia a configuración cuando se pulsa el control C.
-    if (M5.BtnC.wasPressed()) {
-        // Selecciona la pantalla de configuración.
-        currentScreen = ScreenId::Settings;
-        // Redibuja las preferencias inmediatamente.
-        drawScreen(currentScreen, viewModel);
-    }
+    // Redibuja la pantalla seleccionada con el último modelo disponible.
+    drawScreen(currentScreen, viewModel);
 }
 
 // Inicializa hardware, comunicación e interfaz.
 void setup() {
-    // Obtiene una configuración base compatible con Core2.
+    // Obtiene una configuración base compatible con M5Unified.
     auto config = M5.config();
-    // Activa el puerto serie USB para diagnóstico y datos.
+    // Activa la alimentación de periféricos necesaria para el dispositivo.
     config.output_power = true;
     // Inicializa el hardware unificado.
     M5.begin(config);
+    // Inicializa la capa portátil de entrada.
+    initializeInput();
     // Inicia el puerto serie con la velocidad del protocolo.
     Serial.begin(115200);
     // Espera brevemente a que el puerto serie esté disponible.
@@ -194,7 +206,7 @@ void loop() {
     // Lee y procesa mensajes serie disponibles.
     readSerialMessages();
     // Atiende la navegación solicitada por el usuario.
-    handleButtons();
+    handleNavigation();
     // Cede tiempo al sistema para evitar un bucle agresivo.
     delay(10);
 }
