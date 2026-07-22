@@ -1,0 +1,19 @@
+{
+  "update_interval_seconds": 5,
+  "platforms": {
+    "copilot": {
+      "enabled": true,
+      "monitoring_enabled": true,
+      "visible_on_device": true,
+      "alerts_enabled": true,
+      "actions_enabled": false
+    },
+    "mock": {
+      "enabled": false,
+      "monitoring_enabled": true,
+      "visible_on_device": true,
+      "alerts_enabled": true,
+      "actions_enabled": false
+    }
+  }
+}
