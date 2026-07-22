@@ -2,8 +2,10 @@
 
 # Expone el contrato base para implementaciones externas.
 from agent_control_hub.adapters.base import PlatformAdapter
+# Expone el adaptador inicial de GitHub Copilot.
+from agent_control_hub.adapters.copilot import CopilotAdapter
 # Expone el adaptador de demostración incluido en el MVP.
 from agent_control_hub.adapters.mock import MockAdapter
 
 # Define la API pública del módulo.
-__all__ = ["MockAdapter", "PlatformAdapter"]
+__all__ = ["CopilotAdapter", "MockAdapter", "PlatformAdapter"]
