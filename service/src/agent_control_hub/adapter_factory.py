@@ -1,13 +1,11 @@
 """Creación controlada de adaptadores a partir de configuración validada."""
 
-# Importa tipos de función para registrar constructores de adaptadores.
+# Importa tipos estándar para registrar constructores y declarar resultados inmutables.
 from collections.abc import Callable
-# Importa utilidades para declarar resultados inmutables.
 from dataclasses import dataclass
 
-# Importa adaptadores disponibles en la primera fase.
+# Importa adaptadores disponibles y la configuración raíz del servicio.
 from agent_control_hub.adapters import CopilotAdapter, MockAdapter, PlatformAdapter
-# Importa la configuración raíz del servicio.
 from agent_control_hub.config import ServiceSettings
 
 
