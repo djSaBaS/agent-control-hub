@@ -1,29 +1,15 @@
 """Transporte USB serie para mensajes NDJSON."""
 
-# Importa el protocolo estructural para tipar la conexión sin acoplarla a pyserial.
-from typing import Protocol
+# Conserva las anotaciones como texto para permitir importaciones solo de tipado.
+from __future__ import annotations
 
+# Importa utilidades estándar para declarar dependencias exclusivas del analizador estático.
+from typing import TYPE_CHECKING
 
-# Define únicamente las operaciones serie que utiliza el servicio.
-class _SerialConnection(Protocol):
-    """Contrato mínimo de una conexión serie abierta."""
-
-    # Expone si el puerto permanece abierto como propiedad de solo lectura.
-    @property
-    def is_open(self) -> bool:
-        """Indica si la conexión serie continúa abierta."""
-
-    # Declara la escritura de una secuencia de bytes.
-    def write(self, payload: bytes) -> int:
-        """Escribe bytes y devuelve la cantidad aceptada."""
-
-    # Declara el vaciado del búfer de salida.
-    def flush(self) -> None:
-        """Fuerza la transmisión del búfer pendiente."""
-
-    # Declara el cierre de la conexión.
-    def close(self) -> None:
-        """Libera el puerto serie."""
+# Importa la clase real de pyserial únicamente durante el análisis de tipos.
+if TYPE_CHECKING:
+    # Proporciona a MyPy la definición exacta de la conexión serie.
+    import serial
 
 
 # Gestiona una conexión serie simple y explícita.
@@ -40,8 +26,8 @@ class SerialTransport:
         self._baud_rate = baud_rate
         # Guarda el tiempo máximo de espera en operaciones de E/S.
         self._timeout = timeout
-        # Inicializa la conexión como cerrada.
-        self._connection: _SerialConnection | None = None
+        # Inicializa la conexión real de pyserial como cerrada.
+        self._connection: serial.Serial | None = None
 
     # Abre el puerto configurado cuando todavía está cerrado.
     def open(self) -> None:
@@ -97,7 +83,7 @@ class SerialTransport:
         self._connection = None
 
     # Permite utilizar el transporte mediante un bloque with.
-    def __enter__(self) -> "SerialTransport":
+    def __enter__(self) -> SerialTransport:
         """Abre el transporte y devuelve la instancia activa."""
 
         # Abre la conexión serie configurada.
