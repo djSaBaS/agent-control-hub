@@ -2,8 +2,6 @@
 
 # Importa el ejecutor asíncrono para las capturas del adaptador.
 import asyncio
-# Importa el tipo de función utilizado por monkeypatch.
-from collections.abc import Callable
 
 # Importa el tipo oficial del fixture de sustitución.
 from pytest import MonkeyPatch
@@ -25,7 +23,10 @@ def test_copilot_is_offline_when_cli_is_missing(
     import agent_control_hub.adapters.copilot as copilot_module
 
     # Define una búsqueda simulada que nunca encuentra el ejecutable.
-    missing_executable: Callable[[str], str | None] = lambda _name: None
+    def missing_executable(_name: str) -> str | None:
+        # Simula un sistema sin GitHub Copilot CLI instalado.
+        return None
+
     # Sustituye la función de búsqueda dentro del módulo.
     monkeypatch.setattr(copilot_module.shutil, "which", missing_executable)
     # Ejecuta la captura asíncrona del adaptador.
@@ -47,9 +48,10 @@ def test_copilot_is_idle_when_cli_is_installed(
     import agent_control_hub.adapters.copilot as copilot_module
 
     # Define una búsqueda simulada que devuelve una ruta válida.
-    installed_executable: Callable[[str], str | None] = (
-        lambda _name: "C:/Tools/copilot.exe"
-    )
+    def installed_executable(_name: str) -> str | None:
+        # Simula una instalación local accesible para el servicio.
+        return "C:/Tools/copilot.exe"
+
     # Sustituye la función de búsqueda dentro del módulo.
     monkeypatch.setattr(copilot_module.shutil, "which", installed_executable)
     # Ejecuta la captura asíncrona del adaptador.
