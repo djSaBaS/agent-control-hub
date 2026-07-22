@@ -4,11 +4,17 @@
 import argparse
 # Importa el motor asíncrono utilizado por adaptadores.
 import asyncio
+# Importa rutas para localizar la configuración local.
+from pathlib import Path
 # Importa utilidades de tiempo para el modo continuo.
 import time
 
-# Importa el adaptador de demostración del MVP.
+# Importa la selección validada de conectores.
+from agent_control_hub.adapter_factory import AdapterSelection, build_adapter_selection
+# Importa el adaptador de demostración forzado por consola.
 from agent_control_hub.adapters import MockAdapter
+# Importa la carga validada de preferencias.
+from agent_control_hub.config import load_settings
 # Importa el codificador del protocolo serie.
 from agent_control_hub.protocol import encode_snapshot
 # Importa el agregador de plataformas.
@@ -26,6 +32,17 @@ def build_parser() -> argparse.ArgumentParser:
         # Explica la función principal del proceso.
         description="Monitoriza agentes de IA y envía su estado a un dispositivo físico.",
     )
+    # Añade el archivo JSON opcional de configuración.
+    parser.add_argument(
+        # Define el nombre largo del argumento.
+        "--config",
+        # Convierte el valor recibido en una ruta local.
+        type=Path,
+        # Utiliza valores seguros cuando no se facilita archivo.
+        default=None,
+        # Documenta el propósito de la opción.
+        help="Archivo JSON con plataformas y preferencias del servicio.",
+    )
     # Añade el puerto serie opcional del dispositivo.
     parser.add_argument(
         # Define el nombre largo del argumento.
@@ -37,16 +54,16 @@ def build_parser() -> argparse.ArgumentParser:
         # Documenta un ejemplo válido para Windows.
         help="Puerto serie del dispositivo, por ejemplo COM5.",
     )
-    # Añade el intervalo entre instantáneas.
+    # Añade una posible sustitución del intervalo configurado.
     parser.add_argument(
         # Define el nombre largo del argumento.
         "--interval",
         # Convierte el valor a número decimal.
         type=float,
-        # Utiliza cinco segundos por defecto.
-        default=5.0,
+        # Utiliza la configuración cuando se omite.
+        default=None,
         # Documenta la unidad del intervalo.
-        help="Segundos entre actualizaciones.",
+        help="Segundos entre actualizaciones; sustituye el archivo de configuración.",
     )
     # Añade el modo de una sola ejecución.
     parser.add_argument(
@@ -64,19 +81,30 @@ def build_parser() -> argparse.ArgumentParser:
         # Activa una bandera booleana sin valor adicional.
         action="store_true",
         # Documenta el propósito de desarrollo.
-        help="Utiliza datos simulados para desarrollar la interfaz.",
+        help="Fuerza datos simulados e ignora la selección de plataformas.",
     )
     # Devuelve el analizador configurado.
     return parser
 
 
-# Obtiene una instantánea completa mediante el servicio.
-async def collect_snapshot() -> bytes:
-    """Recoge el adaptador de demostración y devuelve NDJSON."""
+# Construye una selección exclusiva para el modo de demostración.
+def _build_mock_selection() -> AdapterSelection:
+    """Devuelve un único conector simulado y visible."""
 
-    # Crea el agregador con el adaptador disponible en el MVP.
-    service = SnapshotService([MockAdapter()])
-    # Obtiene el modelo normalizado de todas las plataformas.
+    # Crea una selección inmutable compatible con el servicio.
+    return AdapterSelection(
+        # Añade una única instancia del adaptador simulado.
+        adapters=(MockAdapter(),),
+        # Permite que la plataforma simulada aparezca en el dispositivo.
+        visible_platform_ids=frozenset({"mock"}),
+    )
+
+
+# Obtiene una instantánea completa mediante el servicio configurado.
+async def collect_snapshot(service: SnapshotService) -> bytes:
+    """Recoge las plataformas configuradas y devuelve NDJSON."""
+
+    # Obtiene el modelo normalizado de todas las plataformas visibles.
     snapshot = await service.collect()
     # Codifica el modelo para consola o dispositivo.
     return encode_snapshot(snapshot)
@@ -86,8 +114,26 @@ async def collect_snapshot() -> bytes:
 def main(args: argparse.Namespace) -> int:
     """Ejecuta una captura única o un bucle de transmisión."""
 
+    # Carga y valida preferencias antes de iniciar conectores.
+    settings = load_settings(args.config)
+    # Fuerza la demostración cuando se solicita expresamente.
+    if args.mock:
+        # Utiliza únicamente datos simulados.
+        selection = _build_mock_selection()
+    else:
+        # Construye conectores según la configuración validada.
+        selection = build_adapter_selection(settings)
+    # Construye el agregador con monitorización y visibilidad separadas.
+    service = SnapshotService(
+        # Inyecta todos los conectores que deben consultarse.
+        selection.adapters,
+        # Filtra la información enviada al dispositivo.
+        visible_platform_ids=selection.visible_platform_ids,
+    )
+    # Utiliza el valor de consola cuando fue facilitado.
+    interval = args.interval if args.interval is not None else settings.update_interval_seconds
     # Rechaza intervalos nulos o negativos antes de abrir dispositivos.
-    if args.interval <= 0:
+    if interval <= 0:
         # Informa del error mediante una excepción de uso.
         raise ValueError("El intervalo debe ser mayor que cero.")
     # Mantiene el transporte vacío cuando solo se imprime por consola.
@@ -101,7 +147,7 @@ def main(args: argparse.Namespace) -> int:
         # Repite hasta que se solicite finalizar.
         while True:
             # Ejecuta la captura asíncrona desde el proceso síncrono.
-            payload = asyncio.run(collect_snapshot())
+            payload = asyncio.run(collect_snapshot(service))
             # Envía el mensaje al dispositivo cuando existe transporte.
             if transport is not None:
                 # Transmite la instantánea NDJSON completa.
@@ -113,7 +159,7 @@ def main(args: argparse.Namespace) -> int:
                 # Rompe el bucle principal.
                 break
             # Espera el intervalo configurado antes de la siguiente captura.
-            time.sleep(args.interval)
+            time.sleep(interval)
     # Garantiza la liberación del puerto ante cualquier salida.
     finally:
         # Cierra el transporte cuando fue creado.
