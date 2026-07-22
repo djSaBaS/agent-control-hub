@@ -1,15 +1,12 @@
 """Agregación de adaptadores en instantáneas para el dispositivo."""
 
-# Importa utilidades para ejecutar adaptadores concurrentemente.
+# Importa utilidades estándar para concurrencia, colecciones y fechas.
 import asyncio
-# Importa contratos de colecciones de solo lectura.
 from collections.abc import Sequence
-# Importa fechas conscientes de zona horaria.
 from datetime import UTC, datetime
 
-# Importa el contrato de adaptadores aceptado por el servicio.
+# Importa el contrato de adaptadores y los modelos normalizados.
 from agent_control_hub.adapters.base import PlatformAdapter
-# Importa los modelos de salida normalizados.
 from agent_control_hub.models import AgentState, DeviceSnapshot, PlatformSnapshot
 
 
