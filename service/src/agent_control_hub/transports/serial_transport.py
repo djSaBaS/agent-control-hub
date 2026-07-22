@@ -8,8 +8,10 @@ from typing import Protocol
 class _SerialConnection(Protocol):
     """Contrato mínimo de una conexión serie abierta."""
 
-    # Expone si el puerto permanece abierto.
-    is_open: bool
+    # Expone si el puerto permanece abierto como propiedad de solo lectura.
+    @property
+    def is_open(self) -> bool:
+        """Indica si la conexión serie continúa abierta."""
 
     # Declara la escritura de una secuencia de bytes.
     def write(self, payload: bytes) -> int:
