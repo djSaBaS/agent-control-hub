@@ -4,10 +4,10 @@
 import argparse
 # Importa el motor asíncrono utilizado por adaptadores.
 import asyncio
-# Importa rutas para localizar la configuración local.
-from pathlib import Path
 # Importa utilidades de tiempo para el modo continuo.
 import time
+# Importa rutas para localizar la configuración local.
+from pathlib import Path
 
 # Importa la selección validada de conectores.
 from agent_control_hub.adapter_factory import AdapterSelection, build_adapter_selection
@@ -131,7 +131,13 @@ def main(args: argparse.Namespace) -> int:
         visible_platform_ids=selection.visible_platform_ids,
     )
     # Utiliza el valor de consola cuando fue facilitado.
-    interval = args.interval if args.interval is not None else settings.update_interval_seconds
+    interval = (
+        # Prioriza la sustitución explícita del argumento.
+        args.interval
+        # Utiliza el intervalo validado del archivo en caso contrario.
+        if args.interval is not None
+        else settings.update_interval_seconds
+    )
     # Rechaza intervalos nulos o negativos antes de abrir dispositivos.
     if interval <= 0:
         # Informa del error mediante una excepción de uso.
