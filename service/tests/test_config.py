@@ -1,11 +1,10 @@
 """Pruebas de configuración y selección de plataformas."""
 
-# Importa rutas tipadas utilizadas por el directorio temporal.
+# Importa rutas estándar utilizadas por el directorio temporal.
 from pathlib import Path
 
-# Importa la construcción de adaptadores configurados.
+# Importa la construcción de adaptadores y la carga validada de configuración.
 from agent_control_hub.adapter_factory import build_adapter_selection
-# Importa la carga validada del archivo JSON.
 from agent_control_hub.config import load_settings
 
 
