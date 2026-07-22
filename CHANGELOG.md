@@ -11,6 +11,10 @@
 - Capa de entrada portable mediante botones o pantalla táctil.
 - Documentación de compatibilidad entre Core2 y familia CoreS3.
 - Instrucciones de repositorio para GitHub Copilot.
+- Integración continua para Python 3.11, 3.12 y 3.13 con Ruff, MyPy, Pytest y cobertura.
+- Compilación automatizada y artefactos para Core2 y CoreS3.
+- CodeQL, pip-audit y revisión degradable de dependencias.
+- Diagnósticos MyPy, JUnit, cobertura y logs de firmware conservados como artefactos.
 
 ## 0.1.0 - 2026-07-22
 
