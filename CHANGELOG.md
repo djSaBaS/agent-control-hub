@@ -16,6 +16,10 @@
 - CodeQL, pip-audit y revisión degradable de dependencias.
 - Diagnósticos MyPy, JUnit, cobertura y logs de firmware conservados como artefactos.
 - Adaptador local de Codex para tokens y límites reales desde archivos de sesión.
+- Telemetría de sesión, proyecto, tarea, estado y actividad reciente de Codex.
+- Lectura incremental de JSONL con detección de truncado y rotación.
+- Separación entre acumulado del hilo, última petición, contexto estimado y cuota oficial.
+- Sanitización de rutas, correos, credenciales y salidas técnicas antes de publicar el snapshot.
 - Exportación atómica de `snapshot.json` y visor local compatible con WAMP.
 
 ## 0.1.0 - 2026-07-22

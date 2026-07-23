@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Control Hub · Datos reales</title>
+  <title>Agent Control Hub · Telemetría real</title>
   <style>
     :root {
       color-scheme: dark;
@@ -12,36 +12,85 @@
       color: #edf2f7;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #172033, #0b0f14 45%); }
-    main { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
-    header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 24px; }
-    h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 3rem); }
-    .subtitle { margin-top: 8px; color: #9da9b8; }
-    .status { padding: 8px 12px; border: 1px solid #2d3748; border-radius: 999px; background: #141b26; white-space: nowrap; }
-    .status.ok { border-color: #2f855a; }
-    .status.error { border-color: #c53030; }
-    .notice { display: none; margin-bottom: 20px; padding: 14px 16px; border-radius: 12px; background: #3b2f13; border: 1px solid #8a6d1f; color: #ffe8a3; }
+    body { margin: 0; min-height: 100vh; background: #0b0f14; }
+    main { width: min(1240px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 48px; }
+    header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 22px; }
+    h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.5rem); }
+    h2, h3 { margin: 0; }
+    h3 { font-size: 1rem; }
+    .subtitle { margin-top: 7px; color: #9da9b8; }
+    .connection { padding: 8px 12px; border: 1px solid #334155; border-radius: 8px; background: #141b26; white-space: nowrap; }
+    .connection.ok { border-color: #2f855a; }
+    .connection.error { border-color: #c53030; }
+    .notice { display: none; margin-bottom: 18px; padding: 13px 15px; border: 1px solid #8a6d1f; border-radius: 8px; background: #2f2816; color: #ffe8a3; }
     .notice.visible { display: block; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-    .card { background: rgba(20, 27, 38, 0.92); border: 1px solid #293241; border-radius: 18px; padding: 20px; box-shadow: 0 18px 45px rgba(0,0,0,.25); }
-    .card h2, .card h3 { margin-top: 0; }
-    .platform-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-    .badge { font-size: .78rem; padding: 5px 9px; border-radius: 999px; background: #123a2a; color: #a7f3d0; }
-    .metric { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid #252d39; }
+    .platforms { display: grid; gap: 18px; }
+    .platform { border: 1px solid #293241; border-radius: 10px; background: #121923; overflow: hidden; }
+    .platform-head { display: flex; justify-content: space-between; gap: 18px; align-items: center; padding: 18px 20px; border-bottom: 1px solid #293241; }
+    .platform-title { display: flex; align-items: center; gap: 12px; }
+    .state-dot { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
+    .state-dot.working { background: #38bdf8; }
+    .state-dot.waiting { background: #f59e0b; }
+    .state-dot.completed { background: #34d399; }
+    .state-dot.error, .state-dot.offline { background: #f87171; }
+    .badge { padding: 5px 9px; border: 1px solid #3b4758; border-radius: 7px; color: #dbe5f0; font-size: .78rem; text-transform: uppercase; }
+    .badge.working { border-color: #0e7490; color: #a5f3fc; }
+    .badge.waiting { border-color: #a16207; color: #fde68a; }
+    .badge.completed { border-color: #047857; color: #a7f3d0; }
+    .badge.error, .badge.offline { border-color: #b91c1c; color: #fecaca; }
+    .body { padding: 20px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #293241; border-radius: 8px; overflow: hidden; }
+    .summary-item { min-height: 98px; padding: 15px; border-right: 1px solid #293241; }
+    .summary-item:last-child { border-right: 0; }
+    .eyebrow { display: block; margin-bottom: 8px; color: #8fa0b5; font-size: .76rem; text-transform: uppercase; }
+    .summary-value { font-size: 1.02rem; line-height: 1.35; overflow-wrap: anywhere; }
+    .summary-note { margin-top: 6px; color: #8fa0b5; font-size: .82rem; line-height: 1.35; }
+    .content-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); gap: 18px; margin-top: 18px; }
+    .section { border-top: 1px solid #293241; padding-top: 16px; }
+    .section:first-child { border-top: 0; padding-top: 0; }
+    .section + .section { margin-top: 18px; }
+    .section-title { margin-bottom: 10px; color: #dbe5f0; }
+    .metric { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid #252d39; }
     .metric:last-child { border-bottom: 0; }
     .metric span:first-child { color: #9da9b8; }
     .metric strong { text-align: right; overflow-wrap: anywhere; }
-    .limit { margin-top: 18px; }
+    .limit { margin-top: 14px; }
+    .limit:first-of-type { margin-top: 0; }
     .limit-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-    .bar { height: 10px; background: #252d39; border-radius: 999px; overflow: hidden; }
-    .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #38bdf8, #818cf8); border-radius: inherit; }
-    .source { margin-top: 14px; color: #8290a3; font-size: .86rem; }
+    .bar { height: 9px; background: #252d39; border-radius: 5px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: #38bdf8; }
+    .activity-list { display: grid; gap: 8px; }
+    .activity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid #252d39; }
+    .activity:last-child { border-bottom: 0; }
+    .activity-status { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: #94a3b8; }
+    .activity-status.working { background: #38bdf8; }
+    .activity-status.completed { background: #34d399; }
+    .activity-status.waiting { background: #f59e0b; }
+    .activity-status.error { background: #f87171; }
+    .activity-label { font-weight: 650; }
+    .activity-summary { margin-top: 3px; color: #8fa0b5; font-size: .83rem; overflow-wrap: anywhere; }
+    .activity-time { color: #8fa0b5; font-size: .78rem; white-space: nowrap; }
     .empty { color: #9da9b8; }
-    details { margin-top: 20px; }
+    .source { margin-top: 12px; color: #8290a3; font-size: .82rem; overflow-wrap: anywhere; }
+    details { margin-top: 18px; border-top: 1px solid #293241; padding-top: 14px; }
     summary { cursor: pointer; color: #b9c4d2; }
-    pre { max-height: 340px; overflow: auto; padding: 16px; border-radius: 12px; background: #080b10; border: 1px solid #202734; font-size: .8rem; }
-    footer { margin-top: 24px; color: #738094; font-size: .86rem; }
-    @media (max-width: 640px) { header { flex-direction: column; } .status { white-space: normal; } }
+    pre { max-height: 360px; overflow: auto; padding: 16px; border: 1px solid #202734; border-radius: 8px; background: #080b10; font-size: .8rem; }
+    footer { margin-top: 22px; color: #738094; font-size: .84rem; }
+    @media (max-width: 900px) {
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-item:nth-child(2) { border-right: 0; }
+      .summary-item:nth-child(-n+2) { border-bottom: 1px solid #293241; }
+      .content-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      header, .platform-head { align-items: flex-start; flex-direction: column; }
+      .connection { white-space: normal; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .summary-item { border-right: 0; border-bottom: 1px solid #293241; }
+      .summary-item:last-child { border-bottom: 0; }
+      .activity { grid-template-columns: auto minmax(0, 1fr); }
+      .activity-time { grid-column: 2; }
+    }
   </style>
 </head>
 <body>
@@ -51,11 +100,11 @@
         <h1>Agent Control Hub</h1>
         <div class="subtitle">Vista local de telemetría real y sanitizada</div>
       </div>
-      <div id="connection" class="status">Esperando snapshot.json…</div>
+      <div id="connection" class="connection">Esperando snapshot.json…</div>
     </header>
 
     <div id="warning" class="notice"></div>
-    <section id="platforms" class="grid"></section>
+    <section id="platforms" class="platforms"></section>
 
     <details>
       <summary>Ver JSON recibido</summary>
@@ -63,7 +112,7 @@
     </details>
 
     <footer>
-      El visor se actualiza cada cinco segundos. Los campos nulos significan “dato no disponible”; nunca se sustituyen por valores simulados.
+      El visor se actualiza cada cinco segundos. Un campo ausente o nulo significa que la fuente no lo proporciona; no se completa con datos simulados.
     </footer>
   </main>
 
@@ -73,86 +122,222 @@
     const platforms = document.getElementById('platforms');
     const rawJson = document.getElementById('raw-json');
 
-    const formatNumber = value => value == null ? 'No disponible' : new Intl.NumberFormat('es-ES').format(value);
-    const formatDate = value => value ? new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(value)) : 'No disponible';
-    const ageMinutes = value => value ? Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000)) : null;
+    const statusLabels = {
+      idle: 'Inactivo',
+      working: 'Trabajando',
+      waiting: 'En espera',
+      completed: 'Completado',
+      error: 'Error',
+      offline: 'Desconectado'
+    };
+
+    const formatNumber = value => value == null
+      ? 'No disponible'
+      : new Intl.NumberFormat('es-ES').format(value);
+    const formatPercent = value => value == null
+      ? 'No disponible'
+      : `${new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(value)} %`;
+    const formatDate = value => value
+      ? new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(value))
+      : 'No disponible';
+    const formatTime = value => value
+      ? new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value))
+      : '';
+    const ageMinutes = value => value
+      ? Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000))
+      : null;
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    }
 
     function metric(label, value) {
-      const row = document.createElement('div');
-      row.className = 'metric';
-      const name = document.createElement('span');
-      name.textContent = label;
-      const data = document.createElement('strong');
-      data.textContent = value;
-      row.append(name, data);
+      const row = element('div', 'metric');
+      row.append(element('span', '', label), element('strong', '', value));
       return row;
+    }
+
+    function summaryItem(label, value, note) {
+      const item = element('div', 'summary-item');
+      item.append(element('span', 'eyebrow', label), element('div', 'summary-value', value));
+      if (note) item.append(element('div', 'summary-note', note));
+      return item;
     }
 
     function renderLimit(title, item) {
       if (!item) return null;
-      const wrapper = document.createElement('div');
-      wrapper.className = 'limit';
-      const head = document.createElement('div');
-      head.className = 'limit-head';
-      const label = document.createElement('strong');
-      label.textContent = title;
-      const percent = document.createElement('span');
-      percent.textContent = `${item.used_percent}% usado · ${item.remaining_percent}% restante`;
-      head.append(label, percent);
-      const bar = document.createElement('div');
-      bar.className = 'bar';
-      const fill = document.createElement('span');
+      const wrapper = element('div', 'limit');
+      const head = element('div', 'limit-head');
+      head.append(
+        element('strong', '', title),
+        element('span', '', `${item.used_percent}% usado · ${item.remaining_percent}% restante`)
+      );
+      const bar = element('div', 'bar');
+      const fill = element('span');
       fill.style.width = `${Math.min(100, Math.max(0, item.used_percent))}%`;
       bar.append(fill);
-      wrapper.append(head, bar, metric('Ventana', `${item.window_minutes} minutos`), metric('Reinicio', formatDate(item.resets_at)));
+      wrapper.append(
+        head,
+        bar,
+        metric('Ventana', `${formatNumber(item.window_minutes)} minutos`),
+        metric('Reinicio', formatDate(item.resets_at))
+      );
       return wrapper;
     }
 
-    function renderPlatform(platform) {
-      const card = document.createElement('article');
-      card.className = 'card';
-      const head = document.createElement('div');
-      head.className = 'platform-head';
-      const title = document.createElement('h2');
-      title.textContent = platform.display_name;
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.textContent = platform.token_usage ? 'Datos reales' : platform.status;
-      head.append(title, badge);
-      card.append(head);
-
-      const usage = platform.token_usage;
-      if (usage) {
-        card.append(
-          metric('Tokens de entrada', formatNumber(usage.input_tokens)),
-          metric('Entrada desde caché', formatNumber(usage.cached_input_tokens)),
-          metric('Tokens de salida', formatNumber(usage.output_tokens)),
-          metric('Tokens de razonamiento', formatNumber(usage.reasoning_output_tokens)),
-          metric('Total de la sesión', formatNumber(usage.total_tokens)),
-          metric('Ventana de contexto', formatNumber(usage.model_context_window)),
-          metric('Último dato', formatDate(usage.updated_at))
-        );
-        const source = document.createElement('div');
-        source.className = 'source';
-        source.textContent = `Fuente: ${usage.source} · ${usage.source_reference ?? 'sin referencia'}`;
-        card.append(source);
-      } else {
-        const empty = document.createElement('p');
-        empty.className = 'empty';
-        empty.textContent = 'No se ha encontrado todavía un evento token_count real.';
-        card.append(empty);
+    function renderActivity(items) {
+      const list = element('div', 'activity-list');
+      if (!items?.length) {
+        list.append(element('p', 'empty', 'No hay actividad técnica reciente disponible.'));
+        return list;
       }
+      items.slice(0, 8).forEach(item => {
+        const row = element('div', 'activity');
+        const dot = element('span', `activity-status ${item.status}`);
+        const content = element('div');
+        content.append(element('div', 'activity-label', item.label));
+        if (item.summary) content.append(element('div', 'activity-summary', item.summary));
+        row.append(dot, content, element('time', 'activity-time', formatTime(item.timestamp)));
+        list.append(row);
+      });
+      return list;
+    }
 
+    function renderPlatform(platform) {
+      const article = element('article', 'platform');
+      const head = element('div', 'platform-head');
+      const titleWrap = element('div', 'platform-title');
+      titleWrap.append(
+        element('span', `state-dot ${platform.status}`),
+        element('h2', '', platform.display_name)
+      );
+      head.append(
+        titleWrap,
+        element('span', `badge ${platform.status}`, statusLabels[platform.status] ?? platform.status)
+      );
+      article.append(head);
+
+      const body = element('div', 'body');
+      const task = platform.task;
+      const project = platform.project;
+      const session = platform.session;
+      const activities = platform.recent_activity ?? [];
+      const lastResult = activities.find(item => ['completed', 'error'].includes(item.status));
+      const summary = element('div', 'summary-grid');
+      summary.append(
+        summaryItem(
+          'Proyecto',
+          project?.display_name ?? 'No disponible',
+          session?.originator ?? null
+        ),
+        summaryItem(
+          'Tarea',
+          task?.display_name ?? 'No disponible',
+          task?.started_at ? `Iniciada: ${formatDate(task.started_at)}` : null
+        ),
+        summaryItem(
+          'Actividad actual',
+          task?.activity ?? platform.status_message ?? statusLabels[platform.status] ?? platform.status,
+          platform.status_reason ? `Motivo: ${platform.status_reason}` : null
+        ),
+        summaryItem(
+          'Último resultado',
+          lastResult?.summary ?? lastResult?.label ?? 'No disponible',
+          lastResult ? formatDate(lastResult.timestamp) : null
+        )
+      );
+      body.append(summary);
+
+      const contentGrid = element('div', 'content-grid');
+      const left = element('div');
+      const activitySection = element('section', 'section');
+      activitySection.append(element('h3', 'section-title', 'Actividad reciente'));
+      activitySection.append(renderActivity(activities));
+      left.append(activitySection);
+
+      const sessionSection = element('section', 'section');
+      sessionSection.append(
+        element('h3', 'section-title', 'Sesión'),
+        metric('Inicio del hilo', formatDate(session?.started_at)),
+        metric('Última actividad', formatDate(session?.last_activity_at)),
+        metric('Origen', session?.source ?? 'No disponible'),
+        metric('Versión de Codex', session?.cli_version ?? 'No disponible'),
+        metric('Agentes acreditados', formatNumber(platform.active_agents))
+      );
+      left.append(sessionSection);
+
+      const right = element('div');
+      const limitsSection = element('section', 'section');
+      limitsSection.append(element('h3', 'section-title', 'Cuota oficial'));
       const limits = platform.rate_limits;
       if (limits) {
-        card.append(metric('Plan detectado', limits.plan_type ?? 'No disponible'));
-        const primary = renderLimit('Ventana corta', limits.primary);
-        const secondary = renderLimit('Ventana semanal', limits.secondary);
-        if (primary) card.append(primary);
-        if (secondary) card.append(secondary);
-        card.append(metric('Límites actualizados', formatDate(limits.updated_at)));
+        limitsSection.append(metric('Plan detectado', limits.plan_type ?? 'No disponible'));
+        const primary = renderLimit('Ventana principal', limits.primary);
+        const secondary = renderLimit('Ventana secundaria', limits.secondary);
+        if (primary) limitsSection.append(primary);
+        if (secondary) limitsSection.append(secondary);
+        limitsSection.append(metric('Límites actualizados', formatDate(limits.updated_at)));
+      } else {
+        limitsSection.append(element('p', 'empty', 'Codex no ha publicado ventanas de cuota completas.'));
       }
-      return card;
+      right.append(limitsSection);
+
+      const usageSection = element('section', 'section');
+      usageSection.append(element('h3', 'section-title', 'Uso de la última petición'));
+      const breakdown = platform.usage_breakdown;
+      const lastRequest = breakdown?.last_request;
+      if (lastRequest) {
+        usageSection.append(
+          metric('Entrada', formatNumber(lastRequest.input_tokens)),
+          metric('Entrada desde caché', formatNumber(lastRequest.cached_input_tokens)),
+          metric('Salida', formatNumber(lastRequest.output_tokens)),
+          metric('Razonamiento', formatNumber(lastRequest.reasoning_output_tokens)),
+          metric('Total', formatNumber(lastRequest.total_tokens)),
+          metric(
+            'Contexto estimado',
+            breakdown.context_used_pct_estimated == null
+              ? 'No disponible'
+              : `${formatPercent(breakdown.context_used_pct_estimated)} (estimado)`
+          ),
+          metric('Ventana del modelo', formatNumber(breakdown.model_context_window))
+        );
+      } else {
+        usageSection.append(element('p', 'empty', 'No hay información de la última petición.'));
+      }
+      right.append(usageSection);
+      contentGrid.append(left, right);
+      body.append(contentGrid);
+
+      const threadTotal = breakdown?.thread_total ?? platform.token_usage;
+      const diagnostics = element('details');
+      diagnostics.append(element('summary', '', 'Diagnóstico de consumo acumulado del hilo'));
+      if (threadTotal) {
+        const diagnosticBody = element('div');
+        diagnosticBody.append(
+          metric('Entrada acumulada', formatNumber(threadTotal.input_tokens)),
+          metric('Caché acumulada', formatNumber(threadTotal.cached_input_tokens)),
+          metric('Salida acumulada', formatNumber(threadTotal.output_tokens)),
+          metric('Razonamiento acumulado', formatNumber(threadTotal.reasoning_output_tokens)),
+          metric('Total acumulado del hilo', formatNumber(threadTotal.total_tokens)),
+          metric('Último dato de uso', formatDate(threadTotal.updated_at))
+        );
+        diagnostics.append(diagnosticBody);
+        diagnostics.append(
+          element(
+            'div',
+            'source',
+            `Fuente: ${threadTotal.source} · ${threadTotal.source_reference ?? 'sin referencia'}`
+          )
+        );
+      } else {
+        diagnostics.append(element('p', 'empty', 'No se ha encontrado un evento token_count legible.'));
+      }
+      body.append(diagnostics);
+      article.append(body);
+      return article;
     }
 
     async function refresh() {
@@ -162,20 +347,28 @@
         const snapshot = await response.json();
         rawJson.textContent = JSON.stringify(snapshot, null, 2);
         platforms.replaceChildren(...snapshot.platforms.map(renderPlatform));
-        connection.className = 'status ok';
+        connection.className = 'connection ok';
         connection.textContent = `Actualizado: ${formatDate(snapshot.generated_at)}`;
 
-        const stale = snapshot.platforms.filter(item => item.rate_limits?.is_stale);
-        if (stale.length) {
-          const oldest = stale.map(item => ageMinutes(item.rate_limits.updated_at)).filter(value => value != null);
-          warning.textContent = `Los límites de cuota son reales, pero están antiguos (${Math.max(...oldest)} minutos). Ejecuta una nueva tarea en Codex para refrescarlos.`;
+        const messages = [];
+        snapshot.platforms.forEach(item => {
+          if (item.status_reason === 'usage_limit_exceeded') {
+            messages.push(`${item.display_name}: límite de uso agotado.`);
+          }
+          if (item.rate_limits?.is_stale) {
+            const age = ageMinutes(item.rate_limits.updated_at);
+            messages.push(`${item.display_name}: límites sin actualizar desde hace ${age} minutos.`);
+          }
+        });
+        if (messages.length) {
+          warning.textContent = messages.join(' ');
           warning.className = 'notice visible';
         } else {
           warning.className = 'notice';
           warning.textContent = '';
         }
       } catch (error) {
-        connection.className = 'status error';
+        connection.className = 'connection error';
         connection.textContent = `Sin datos: ${error.message}`;
         warning.className = 'notice visible';
         warning.textContent = 'Comprueba que el servicio está ejecutándose y que snapshot.json existe en esta carpeta.';
