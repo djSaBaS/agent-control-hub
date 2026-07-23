@@ -159,7 +159,10 @@ def _fingerprint(path: Path) -> _FileFingerprint:
     return _FileFingerprint(stat.st_mtime_ns, stat.st_size)
 
 
-def _scan_session_file(path: Path, sessions_dir: Path) -> tuple[_TokenEvent | None, _TokenEvent | None]:
+def _scan_session_file(
+    path: Path,
+    sessions_dir: Path,
+) -> tuple[_TokenEvent | None, _TokenEvent | None]:
     """Busca desde el final los últimos datos relevantes de una sesión."""
 
     latest_usage: _TokenEvent | None = None
