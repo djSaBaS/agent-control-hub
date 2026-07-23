@@ -202,13 +202,13 @@ def _find_latest_events(
         if cached is not None and cached.fingerprint == fingerprint:
             continue
         try:
-            latest_usage, latest_rate_limits = _scan_session_file(path, sessions_dir)
+            file_usage, file_rate_limits = _scan_session_file(path, sessions_dir)
         except OSError:
             continue
         file_cache[path] = _CachedFileEvents(
             fingerprint=fingerprint,
-            latest_usage=latest_usage,
-            latest_rate_limits=latest_rate_limits,
+            latest_usage=file_usage,
+            latest_rate_limits=file_rate_limits,
         )
 
     for deleted_path in set(file_cache) - active_paths:
