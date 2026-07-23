@@ -219,9 +219,7 @@ def _find_latest_events(
     for cached in file_cache.values():
         usage = cached.latest_usage
         limits = cached.latest_rate_limits
-        if usage is not None and (
-            latest_usage is None or usage.timestamp > latest_usage.timestamp
-        ):
+        if usage is not None and (latest_usage is None or usage.timestamp > latest_usage.timestamp):
             latest_usage = usage
         if limits is not None and (
             latest_rate_limits is None or limits.timestamp > latest_rate_limits.timestamp
@@ -343,9 +341,7 @@ class CodexAdapter(PlatformAdapter):
         now = datetime.now(UTC)
         usage = _build_usage(latest_usage)
         rate_limits = (
-            _build_rate_limits(latest_rate_limits, now)
-            if latest_rate_limits is not None
-            else None
+            _build_rate_limits(latest_rate_limits, now) if latest_rate_limits is not None else None
         )
         primary = rate_limits.primary if rate_limits is not None else None
         secondary = rate_limits.secondary if rate_limits is not None else None
