@@ -228,9 +228,7 @@ class CodexAdapter(PlatformAdapter):
 
         now = datetime.now(UTC)
         usage_breakdown = (
-            _build_usage_breakdown(active.latest_usage)
-            if active.latest_usage is not None
-            else None
+            _build_usage_breakdown(active.latest_usage) if active.latest_usage is not None else None
         )
         legacy_usage = usage_breakdown.thread_total if usage_breakdown is not None else None
         latest_limits = select_latest_limits(states)
