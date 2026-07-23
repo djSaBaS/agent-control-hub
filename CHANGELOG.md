@@ -15,6 +15,8 @@
 - Compilación automatizada y artefactos para Core2 y CoreS3.
 - CodeQL, pip-audit y revisión degradable de dependencias.
 - Diagnósticos MyPy, JUnit, cobertura y logs de firmware conservados como artefactos.
+- Adaptador local de Codex para tokens y límites reales desde archivos de sesión.
+- Exportación atómica de `snapshot.json` y visor local compatible con WAMP.
 
 ## 0.1.0 - 2026-07-22
 
