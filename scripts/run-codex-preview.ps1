@@ -18,6 +18,68 @@ $PythonExecutable = Join-Path $VirtualEnvironment "Scripts\python.exe"
 $SnapshotPath = Join-Path $WebRoot "snapshot.json"
 $ViewerTarget = Join-Path $WebRoot "index.html"
 
+# Busca un intérprete compatible sin exigir una versión menor concreta.
+function Get-CompatiblePythonRuntime {
+    $Candidates = @(
+        [PSCustomObject]@{
+            Name = "python del sistema"
+            Command = "python"
+            PrefixArguments = @()
+        },
+        [PSCustomObject]@{
+            Name = "Python Launcher 3.13"
+            Command = "py"
+            PrefixArguments = @("-3.13")
+        },
+        [PSCustomObject]@{
+            Name = "Python Launcher 3.12"
+            Command = "py"
+            PrefixArguments = @("-3.12")
+        },
+        [PSCustomObject]@{
+            Name = "Python Launcher 3.11"
+            Command = "py"
+            PrefixArguments = @("-3.11")
+        }
+    )
+
+    foreach ($Candidate in $Candidates) {
+        $ResolvedCommand = Get-Command $Candidate.Command -ErrorAction SilentlyContinue
+        if ($null -eq $ResolvedCommand) {
+            continue
+        }
+
+        $VersionArguments = @()
+        $VersionArguments += $Candidate.PrefixArguments
+        $VersionArguments += @(
+            "-c",
+            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
+        )
+
+        $VersionText = & $ResolvedCommand.Source @VersionArguments 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($VersionText)) {
+            continue
+        }
+
+        try {
+            $Version = [version]($VersionText.Trim())
+        } catch {
+            continue
+        }
+
+        if ($Version -ge [version]"3.11.0" -and $Version -lt [version]"4.0.0") {
+            return [PSCustomObject]@{
+                Name = $Candidate.Name
+                Executable = $ResolvedCommand.Source
+                PrefixArguments = $Candidate.PrefixArguments
+                Version = $Version
+            }
+        }
+    }
+
+    throw "No se ha encontrado Python 3.11 o superior. Ejecuta 'python --version' y comprueba que esté disponible en PATH."
+}
+
 # Valida los parámetros antes de instalar o ejecutar componentes.
 if ($IntervalSeconds -lt 1) {
     throw "El intervalo debe ser de al menos un segundo."
@@ -29,16 +91,42 @@ if (-not (Test-Path $ConfigPath)) {
     throw "No se encuentra la configuración de Codex en $ConfigPath"
 }
 
-# Crea un entorno Python aislado en la carpeta del servicio cuando no existe.
+# Crea un entorno Python aislado con cualquier versión compatible instalada.
 if (-not (Test-Path $PythonExecutable)) {
-    Write-Host "[1/4] Creando el entorno virtual de Python..." -ForegroundColor Cyan
-    py -3.11 -m venv $VirtualEnvironment
+    Write-Host "[1/4] Preparando el entorno virtual de Python..." -ForegroundColor Cyan
+    $PythonRuntime = Get-CompatiblePythonRuntime
+    Write-Host (
+        "Python detectado: {0} ({1})" -f $PythonRuntime.Version, $PythonRuntime.Executable
+    ) -ForegroundColor DarkGray
+
+    # Elimina una creación anterior incompleta antes de volver a generar el entorno.
+    if (Test-Path $VirtualEnvironment) {
+        Remove-Item -Path $VirtualEnvironment -Recurse -Force
+    }
+
+    $VenvArguments = @()
+    $VenvArguments += $PythonRuntime.PrefixArguments
+    $VenvArguments += @("-m", "venv", $VirtualEnvironment)
+    & $PythonRuntime.Executable @VenvArguments
+
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $PythonExecutable)) {
+        throw "No se pudo crear el entorno virtual en $VirtualEnvironment"
+    }
+} else {
+    $ExistingVersion = & $PythonExecutable --version
+    Write-Host "[1/4] Entorno virtual existente: $ExistingVersion" -ForegroundColor Cyan
 }
 
 # Instala o actualiza el paquete editable para utilizar el código de la rama actual.
 Write-Host "[2/4] Instalando Agent Control Hub en el entorno local..." -ForegroundColor Cyan
 & $PythonExecutable -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) {
+    throw "No se pudo actualizar pip dentro del entorno virtual."
+}
 & $PythonExecutable -m pip install --editable $ServiceRoot
+if ($LASTEXITCODE -ne 0) {
+    throw "No se pudo instalar Agent Control Hub en el entorno virtual."
+}
 
 # Prepara el directorio servido por WAMP y copia únicamente el visor sanitizado.
 Write-Host "[3/4] Preparando la vista web en $WebRoot..." -ForegroundColor Cyan
