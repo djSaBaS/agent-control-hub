@@ -1,93 +1,104 @@
 """Modelos de datos normalizados del servicio."""
 
-# Importa fechas y enumeraciones estándar utilizadas por los modelos.
 from datetime import datetime
 from enum import StrEnum
 
-# Importa la clase base de validación y utilidades de Pydantic.
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# Define los estados compatibles en todas las plataformas.
 class AgentState(StrEnum):
     """Estados normalizados de plataformas y agentes."""
 
-    # Representa un recurso disponible sin trabajo activo.
     IDLE = "idle"
-    # Representa un recurso que está ejecutando una tarea.
     WORKING = "working"
-    # Representa un recurso que espera entrada o autorización.
     WAITING = "waiting"
-    # Representa una tarea finalizada correctamente.
     COMPLETED = "completed"
-    # Representa un fallo en la plataforma o tarea.
     ERROR = "error"
-    # Representa una plataforma no accesible.
     OFFLINE = "offline"
 
 
-# Define el estado normalizado de un agente individual.
 class AgentSnapshot(BaseModel):
     """Instantánea de un agente o tarea concreta."""
 
-    # Impide aceptar propiedades desconocidas por accidente.
     model_config = ConfigDict(extra="forbid")
 
-    # Guarda el identificador estable del agente.
     agent_id: str = Field(min_length=1, max_length=80)
-    # Guarda el nombre que verá el usuario.
     display_name: str = Field(min_length=1, max_length=80)
-    # Guarda el estado actual normalizado.
     status: AgentState
-    # Guarda el nombre opcional de la tarea activa.
     task_name: str | None = Field(default=None, max_length=120)
-    # Guarda la fecha opcional de comienzo de la tarea.
     started_at: datetime | None = None
 
 
-# Define el estado normalizado de una plataforma completa.
-class PlatformSnapshot(BaseModel):
-    """Instantánea agregada de una plataforma de agentes."""
+class TokenUsageSnapshot(BaseModel):
+    """Uso real de tokens declarado por una fuente local u oficial."""
 
-    # Impide aceptar propiedades desconocidas por accidente.
     model_config = ConfigDict(extra="forbid")
 
-    # Guarda el identificador estable de la plataforma.
+    input_tokens: int = Field(ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    cache_write_input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(ge=0)
+    reasoning_output_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(ge=0)
+    model_context_window: int | None = Field(default=None, gt=0)
+    scope: str = Field(default="session_total", min_length=1, max_length=40)
+    source: str = Field(min_length=1, max_length=80)
+    updated_at: datetime
+    source_reference: str | None = Field(default=None, max_length=240)
+
+
+class RateLimitWindowSnapshot(BaseModel):
+    """Ventana temporal de cuota informada por una plataforma."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    used_percent: float = Field(ge=0, le=100)
+    remaining_percent: float = Field(ge=0, le=100)
+    window_minutes: int = Field(gt=0)
+    resets_at: datetime
+
+
+class RateLimitsSnapshot(BaseModel):
+    """Límites reales asociados a la cuenta de una plataforma."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit_id: str = Field(min_length=1, max_length=80)
+    plan_type: str | None = Field(default=None, max_length=40)
+    primary: RateLimitWindowSnapshot | None = None
+    secondary: RateLimitWindowSnapshot | None = None
+    source: str = Field(min_length=1, max_length=80)
+    updated_at: datetime
+    source_reference: str | None = Field(default=None, max_length=240)
+    is_stale: bool = False
+
+
+class PlatformSnapshot(BaseModel):
+    """Instantánea agregada de una plataforma completa."""
+
+    model_config = ConfigDict(extra="forbid")
+
     platform_id: str = Field(min_length=1, max_length=40)
-    # Guarda el nombre mostrado al usuario.
     display_name: str = Field(min_length=1, max_length=40)
-    # Guarda el estado global de la plataforma.
     status: AgentState
-    # Guarda los tokens consumidos durante el día cuando estén disponibles.
     tokens_today: int | None = Field(default=None, ge=0)
-    # Guarda el coste diario estimado u oficial cuando esté disponible.
     cost_today: float | None = Field(default=None, ge=0)
-    # Guarda el porcentaje semanal restante cuando sea oficial o calculable.
     weekly_remaining_pct: int | None = Field(default=None, ge=0, le=100)
-    # Guarda el porcentaje restante de la ventana corta.
     rolling_remaining_pct: int | None = Field(default=None, ge=0, le=100)
-    # Guarda el siguiente reinicio conocido de cuota.
     next_reset_at: datetime | None = None
-    # Guarda el número de agentes activos declarado por el adaptador.
     active_agents: int = Field(default=0, ge=0)
-    # Guarda las instantáneas de agentes disponibles.
     agents: list[AgentSnapshot] = Field(default_factory=list)
+    token_usage: TokenUsageSnapshot | None = None
+    rate_limits: RateLimitsSnapshot | None = None
 
 
-# Define el mensaje completo que recibirá el dispositivo.
 class DeviceSnapshot(BaseModel):
     """Instantánea completa transmitida al dispositivo físico."""
 
-    # Impide aceptar propiedades desconocidas por accidente.
     model_config = ConfigDict(extra="forbid")
 
-    # Identifica la versión mayor y menor del protocolo.
     protocol_version: str = "1.0"
-    # Identifica el tipo de mensaje para el firmware.
     type: str = "snapshot"
-    # Guarda la fecha de generación del mensaje.
     generated_at: datetime
-    # Guarda el coste total diario de plataformas con dato disponible.
     total_cost_today: float = Field(default=0, ge=0)
-    # Guarda las plataformas agregadas.
     platforms: list[PlatformSnapshot] = Field(default_factory=list)
