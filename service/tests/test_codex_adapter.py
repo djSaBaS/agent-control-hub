@@ -14,7 +14,7 @@ def _record(
     primary: dict[str, object] | None,
     secondary: dict[str, object] | None,
 ) -> str:
-    """Crea un evento token_count representativo sin datos privados."""
+    """Crea un evento token_count con la estructura real observada en Codex."""
 
     return json.dumps(
         {
@@ -33,13 +33,13 @@ def _record(
                     },
                     "last_token_usage": {"total_tokens": 100},
                     "model_context_window": 258400,
-                    "rate_limits": {
-                        "limit_id": "codex" if primary else "premium",
-                        "primary": primary,
-                        "secondary": secondary,
-                        "credits": None,
-                        "plan_type": "plus" if primary else None,
-                    },
+                },
+                "rate_limits": {
+                    "limit_id": "codex" if primary else "premium",
+                    "primary": primary,
+                    "secondary": secondary,
+                    "credits": None,
+                    "plan_type": "plus" if primary else None,
                 },
             },
         }
@@ -91,6 +91,27 @@ def test_codex_adapter_uses_latest_usage_and_last_real_windows(tmp_path: Path) -
     assert snapshot.rolling_remaining_pct == 26
     assert snapshot.weekly_remaining_pct == 37
     assert str(tmp_path) not in snapshot.model_dump_json()
+
+
+def test_codex_adapter_refreshes_cache_when_session_grows(tmp_path: Path) -> None:
+    """Relee únicamente un archivo que cambia y conserva los datos nuevos."""
+
+    session = tmp_path / "rollout-cache.jsonl"
+    session.write_text(
+        _record("2026-07-23T08:00:00Z", 1_000, None, None) + "\n",
+        encoding="utf-8",
+    )
+    adapter = CodexAdapter(sessions_dir=tmp_path)
+
+    first = asyncio.run(adapter.collect())
+    with session.open("a", encoding="utf-8") as handle:
+        handle.write(_record("2026-07-23T08:05:00Z", 2_000, None, None) + "\n")
+    second = asyncio.run(adapter.collect())
+
+    assert first.token_usage is not None
+    assert first.token_usage.total_tokens == 1_000
+    assert second.token_usage is not None
+    assert second.token_usage.total_tokens == 2_000
 
 
 def test_codex_adapter_is_offline_without_cli_or_sessions(tmp_path: Path) -> None:
