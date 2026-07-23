@@ -97,7 +97,13 @@ jobs:
         id: format
         run: |
           set -euo pipefail
-          python -m ruff format --check .
+          mkdir -p test-results
+          if ! python -m ruff format --check .; then
+            python -m ruff format .
+            git diff -- . > test-results/ruff-format.patch
+            echo "::error title=Formato Python incorrecto::Descarga ruff-format.patch del artefacto informes-python-${{ matrix.python-version }} o ejecuta python -m ruff format ."
+            exit 1
+          fi
 
       # Comprueba los tipos y conserva el diagnóstico completo como artefacto.
       - name: "8 · Comprobar tipado con MyPy"
@@ -137,6 +143,7 @@ jobs:
             service/test-results/mypy.log
             service/test-results/pytest.xml
             service/test-results/coverage.xml
+            service/test-results/ruff-format.patch
           if-no-files-found: warn
           retention-days: 14
 
@@ -158,14 +165,14 @@ jobs:
             echo "| MyPy | \`${{ steps.typing.outcome }}\` |"
             echo "| Pytest y cobertura | \`${{ steps.tests.outcome }}\` |"
             echo ""
-            echo "Los informes de MyPy, JUnit y Coverage se guardan como artefactos durante 14 días."
+            echo "Los informes de Ruff Format, MyPy, JUnit y Coverage se guardan como artefactos durante 14 días."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Añade una anotación clara cuando alguna comprobación no termina correctamente.
       - name: "12 · Explicar cómo localizar un fallo"
         if: failure()
         run: |
-          echo "::error title=Validación Python fallida::Abre el primer paso en rojo. Ruff indica archivo y línea; MyPy indica el tipo incompatible; Pytest muestra la prueba, la excepción y la traza. Descarga también el artefacto informes-python-${{ matrix.python-version }}."
+          echo "::error title=Validación Python fallida::Abre el primer paso en rojo. Ruff indica archivo y línea; Ruff Format genera un parche descargable; MyPy indica el tipo incompatible; Pytest muestra la prueba, la excepción y la traza. Descarga también el artefacto informes-python-${{ matrix.python-version }}."
 
   # Comprueba que el servicio pueda distribuirse como paquete instalable.
   package:
