@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterator
 
 from agent_control_hub.adapters.base import PlatformAdapter
 from agent_control_hub.models import (
