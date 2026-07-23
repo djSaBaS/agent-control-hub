@@ -27,6 +27,24 @@ class _TokenEvent:
     timestamp: datetime
     source_reference: str
     info: dict[str, object]
+    rate_limits: dict[str, object] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _FileFingerprint:
+    """Identifica una versión concreta de un archivo de sesión."""
+
+    modified_ns: int
+    size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class _CachedFileEvents:
+    """Conserva el último consumo y los últimos límites de un archivo."""
+
+    fingerprint: _FileFingerprint
+    latest_usage: _TokenEvent | None
+    latest_rate_limits: _TokenEvent | None
 
 
 def _as_object_dict(value: object) -> dict[str, object] | None:
@@ -109,54 +127,103 @@ def _parse_token_event(line: str, path: Path, sessions_dir: Path) -> _TokenEvent
     timestamp = _parse_timestamp(record.get("timestamp"))
     if info is None or timestamp is None:
         return None
+
+    # Codex actual guarda rate_limits como hermano de info. Se conserva un
+    # fallback para archivos antiguos que pudieran haberlo incluido dentro.
+    rate_limits = _as_object_dict(payload.get("rate_limits"))
+    if rate_limits is None:
+        rate_limits = _as_object_dict(info.get("rate_limits"))
+
     try:
         source_reference = path.relative_to(sessions_dir).as_posix()
     except ValueError:
         source_reference = path.name
-    return _TokenEvent(timestamp, source_reference, info)
+    return _TokenEvent(timestamp, source_reference, info, rate_limits)
 
 
 def _has_rate_windows(event: _TokenEvent) -> bool:
     """Indica si el evento contiene al menos una ventana de cuota real."""
 
-    rate_limits = _as_object_dict(event.info.get("rate_limits"))
-    if rate_limits is None:
+    if event.rate_limits is None:
         return False
     return (
-        _as_object_dict(rate_limits.get("primary")) is not None
-        or _as_object_dict(rate_limits.get("secondary")) is not None
+        _as_object_dict(event.rate_limits.get("primary")) is not None
+        or _as_object_dict(event.rate_limits.get("secondary")) is not None
     )
 
 
-def _find_latest_events(sessions_dir: Path) -> tuple[_TokenEvent | None, _TokenEvent | None]:
-    """Localiza el consumo más reciente y los últimos límites disponibles."""
+def _fingerprint(path: Path) -> _FileFingerprint:
+    """Obtiene una huella barata para detectar archivos nuevos o modificados."""
+
+    stat = path.stat()
+    return _FileFingerprint(stat.st_mtime_ns, stat.st_size)
+
+
+def _scan_session_file(path: Path, sessions_dir: Path) -> tuple[_TokenEvent | None, _TokenEvent | None]:
+    """Busca desde el final los últimos datos relevantes de una sesión."""
 
     latest_usage: _TokenEvent | None = None
     latest_rate_limits: _TokenEvent | None = None
-    for path in sessions_dir.rglob("rollout-*.jsonl"):
-        file_usage: _TokenEvent | None = None
-        file_rate_limits: _TokenEvent | None = None
+    for line in _iter_lines_reverse(path):
+        event = _parse_token_event(line, path, sessions_dir)
+        if event is None:
+            continue
+        if latest_usage is None:
+            latest_usage = event
+        if latest_rate_limits is None and _has_rate_windows(event):
+            latest_rate_limits = event
+        if latest_usage is not None and latest_rate_limits is not None:
+            break
+    return latest_usage, latest_rate_limits
+
+
+def _find_latest_events(
+    sessions_dir: Path,
+    file_cache: dict[Path, _CachedFileEvents],
+) -> tuple[_TokenEvent | None, _TokenEvent | None]:
+    """Localiza datos recientes y reutiliza resultados de archivos sin cambios."""
+
+    active_paths: set[Path] = set()
+    try:
+        paths = list(sessions_dir.rglob("rollout-*.jsonl"))
+    except OSError:
+        paths = []
+
+    for path in paths:
+        active_paths.add(path)
         try:
-            for line in _iter_lines_reverse(path):
-                event = _parse_token_event(line, path, sessions_dir)
-                if event is None:
-                    continue
-                if file_usage is None:
-                    file_usage = event
-                if file_rate_limits is None and _has_rate_windows(event):
-                    file_rate_limits = event
-                if file_usage is not None and file_rate_limits is not None:
-                    break
+            fingerprint = _fingerprint(path)
         except OSError:
             continue
-        if file_usage is not None and (
-            latest_usage is None or file_usage.timestamp > latest_usage.timestamp
+        cached = file_cache.get(path)
+        if cached is not None and cached.fingerprint == fingerprint:
+            continue
+        try:
+            latest_usage, latest_rate_limits = _scan_session_file(path, sessions_dir)
+        except OSError:
+            continue
+        file_cache[path] = _CachedFileEvents(
+            fingerprint=fingerprint,
+            latest_usage=latest_usage,
+            latest_rate_limits=latest_rate_limits,
+        )
+
+    for deleted_path in set(file_cache) - active_paths:
+        del file_cache[deleted_path]
+
+    latest_usage: _TokenEvent | None = None
+    latest_rate_limits: _TokenEvent | None = None
+    for cached in file_cache.values():
+        usage = cached.latest_usage
+        limits = cached.latest_rate_limits
+        if usage is not None and (
+            latest_usage is None or usage.timestamp > latest_usage.timestamp
         ):
-            latest_usage = file_usage
-        if file_rate_limits is not None and (
-            latest_rate_limits is None or file_rate_limits.timestamp > latest_rate_limits.timestamp
+            latest_usage = usage
+        if limits is not None and (
+            latest_rate_limits is None or limits.timestamp > latest_rate_limits.timestamp
         ):
-            latest_rate_limits = file_rate_limits
+            latest_rate_limits = limits
     return latest_usage, latest_rate_limits
 
 
@@ -210,7 +277,7 @@ def _build_window(value: object) -> RateLimitWindowSnapshot | None:
 def _build_rate_limits(event: _TokenEvent, now: datetime) -> RateLimitsSnapshot | None:
     """Construye las cuotas reales y marca datos antiguos."""
 
-    raw_limits = _as_object_dict(event.info.get("rate_limits"))
+    raw_limits = event.rate_limits
     if raw_limits is None:
         return None
     primary = _build_window(raw_limits.get("primary"))
@@ -243,6 +310,7 @@ class CodexAdapter(PlatformAdapter):
 
         self._sessions_dir = sessions_dir or Path.home() / ".codex" / "sessions"
         self._executable = executable
+        self._file_cache: dict[Path, _CachedFileEvents] = {}
 
     @property
     def platform_id(self) -> str:
@@ -258,7 +326,10 @@ class CodexAdapter(PlatformAdapter):
     def _collect_sync(self) -> PlatformSnapshot:
         """Escanea sesiones locales y construye una instantánea sanitizada."""
 
-        latest_usage, latest_rate_limits = _find_latest_events(self._sessions_dir)
+        latest_usage, latest_rate_limits = _find_latest_events(
+            self._sessions_dir,
+            self._file_cache,
+        )
         executable_available = shutil.which(self._executable) is not None
         if latest_usage is None:
             return PlatformSnapshot(
@@ -269,7 +340,9 @@ class CodexAdapter(PlatformAdapter):
         now = datetime.now(UTC)
         usage = _build_usage(latest_usage)
         rate_limits = (
-            _build_rate_limits(latest_rate_limits, now) if latest_rate_limits is not None else None
+            _build_rate_limits(latest_rate_limits, now)
+            if latest_rate_limits is not None
+            else None
         )
         primary = rate_limits.primary if rate_limits is not None else None
         secondary = rate_limits.secondary if rate_limits is not None else None
