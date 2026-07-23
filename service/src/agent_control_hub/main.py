@@ -90,9 +90,7 @@ def main(args: argparse.Namespace) -> int:
         selection.adapters,
         visible_platform_ids=selection.visible_platform_ids,
     )
-    interval = (
-        args.interval if args.interval is not None else settings.update_interval_seconds
-    )
+    interval = args.interval if args.interval is not None else settings.update_interval_seconds
     if interval <= 0:
         raise ValueError("El intervalo debe ser mayor que cero.")
 
