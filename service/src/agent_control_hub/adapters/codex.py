@@ -122,9 +122,10 @@ def _has_rate_windows(event: _TokenEvent) -> bool:
     rate_limits = _as_object_dict(event.info.get("rate_limits"))
     if rate_limits is None:
         return False
-    return _as_object_dict(rate_limits.get("primary")) is not None or _as_object_dict(
-        rate_limits.get("secondary")
-    ) is not None
+    return (
+        _as_object_dict(rate_limits.get("primary")) is not None
+        or _as_object_dict(rate_limits.get("secondary")) is not None
+    )
 
 
 def _find_latest_events(sessions_dir: Path) -> tuple[_TokenEvent | None, _TokenEvent | None]:
@@ -153,8 +154,7 @@ def _find_latest_events(sessions_dir: Path) -> tuple[_TokenEvent | None, _TokenE
         ):
             latest_usage = file_usage
         if file_rate_limits is not None and (
-            latest_rate_limits is None
-            or file_rate_limits.timestamp > latest_rate_limits.timestamp
+            latest_rate_limits is None or file_rate_limits.timestamp > latest_rate_limits.timestamp
         ):
             latest_rate_limits = file_rate_limits
     return latest_usage, latest_rate_limits
@@ -269,9 +269,7 @@ class CodexAdapter(PlatformAdapter):
         now = datetime.now(UTC)
         usage = _build_usage(latest_usage)
         rate_limits = (
-            _build_rate_limits(latest_rate_limits, now)
-            if latest_rate_limits is not None
-            else None
+            _build_rate_limits(latest_rate_limits, now) if latest_rate_limits is not None else None
         )
         primary = rate_limits.primary if rate_limits is not None else None
         secondary = rate_limits.secondary if rate_limits is not None else None
