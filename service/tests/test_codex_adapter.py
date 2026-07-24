@@ -136,8 +136,7 @@ def test_codex_adapter_detects_early_live_quota_reset(tmp_path: Path) -> None:
     session = tmp_path / "rollout-live-rate.jsonl"
     # Escribe un consumo sin ventanas para obligar a utilizar la sonda oficial.
     session.write_text(
-        _record("2026-07-24T12:00:00Z", 1_000, None, None) + "
-",
+        _record("2026-07-24T12:00:00Z", 1_000, None, None) + "\n",
         encoding="utf-8",
     )
     # Prepara dos respuestas consecutivas: agotada y restaurada.
