@@ -1,0 +1,26 @@
+[
+  {
+    "ScriptName": "loopback-viewer.ps1",
+    "Line": 99,
+    "Column": 11,
+    "RuleName": "PSAvoidUsingEmptyCatchBlock",
+    "Severity": 1,
+    "Message": "Empty catch block is used. Please use Write-Error or throw statements in catch blocks."
+  },
+  {
+    "ScriptName": "loopback-viewer.ps1",
+    "Line": 5,
+    "Column": 10,
+    "RuleName": "PSUseShouldProcessForStateChangingFunctions",
+    "Severity": 1,
+    "Message": "Function 'Start-AgentControlLoopbackViewer' has verb that could change system state. Therefore, the function has to support 'ShouldProcess'."
+  },
+  {
+    "ScriptName": "loopback-viewer.ps1",
+    "Line": 113,
+    "Column": 10,
+    "RuleName": "PSUseShouldProcessForStateChangingFunctions",
+    "Severity": 1,
+    "Message": "Function 'Stop-AgentControlLoopbackViewer' has verb that could change system state. Therefore, the function has to support 'ShouldProcess'."
+  }
+]
