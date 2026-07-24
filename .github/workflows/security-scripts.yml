@@ -1,0 +1,127 @@
+# Define el flujo de seguridad para automatizaciones y scripts locales.
+name: "Seguridad · Workflows y PowerShell"
+
+# Ejecuta el análisis cuando cambian workflows, scripts o la política de seguridad.
+on:
+  # Revisa cambios integrados en main.
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "tools/pc-viewer/**"
+      - ".gitignore"
+      - "SECURITY.md"
+  # Revisa cambios propuestos antes de fusionarlos.
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "tools/pc-viewer/**"
+      - ".gitignore"
+      - "SECURITY.md"
+  # Ejecuta una revisión semanal.
+  schedule:
+    - cron: "45 6 * * 1"
+  # Permite iniciar el análisis manualmente.
+  workflow_dispatch:
+
+# Cancela ejecuciones antiguas de la misma referencia.
+concurrency:
+  group: "security-scripts-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  # Analiza los workflows como código mediante CodeQL.
+  codeql-actions:
+    name: "CodeQL · GitHub Actions"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      # Descarga exactamente el commit analizado.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Inicializa el lenguaje específico de GitHub Actions.
+      - name: "2 · Inicializar CodeQL Actions"
+        uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          queries: security-extended
+
+      # Publica los hallazgos en GitHub Security.
+      - name: "3 · Analizar workflows"
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:actions"
+
+  # Comprueba sintaxis, defectos y reglas de seguridad de PowerShell.
+  powershell:
+    name: "PSScriptAnalyzer · PowerShell"
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      # Descarga los scripts de la revisión actual.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Instala una versión exacta del analizador oficial de PowerShell.
+      - name: "2 · Instalar PSScriptAnalyzer"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0
+          Get-Module PSScriptAnalyzer | Select-Object Name, Version
+
+      # Analiza todos los scripts y falla ante cualquier diagnóstico.
+      - name: "3 · Analizar scripts"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Results = Invoke-ScriptAnalyzer \
+              -Path ./scripts \
+              -Recurse \
+              -Severity @("Error", "Warning") \
+              -Settings PSGallery
+          if ($Results) {
+              $Results | Format-Table -AutoSize
+              throw "PSScriptAnalyzer ha detectado errores o advertencias."
+          }
+
+  # Impide que se rastreen almacenes y credenciales locales conocidos.
+  forbidden-files:
+    name: "Archivos sensibles no rastreados"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      # Descarga el árbol completo del commit.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Compara los nombres rastreados con la lista de archivos privados.
+      - name: "2 · Comprobar rutas prohibidas"
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked_files="$(git ls-files)"
+          forbidden_pattern='(^|/)(\.env(\..*)?|auth\.json(\.bak.*)?|state\.db(-.*)?|config\.yaml(\.bak.*)?|context_length_cache\.yaml|models_dev_cache\.json|provider_models_cache\.json)$'
+          matches="$(printf '%s\n' "$tracked_files" | grep -E "$forbidden_pattern" || true)"
+          if [[ -n "$matches" ]]; then
+            echo "Se han encontrado archivos locales sensibles rastreados:"
+            printf '%s\n' "$matches"
+            exit 1
+          fi
