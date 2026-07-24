@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,6 +28,7 @@ from agent_control_hub.adapters.codex_task_metadata import (
     normalize_goal_objective,
     raw_message_text,
 )
+from agent_control_hub.codex_rate_limit_probe import CodexRateLimitProbe
 from agent_control_hub.models import (
     ActivityItem,
     AgentState,
@@ -949,11 +951,51 @@ def _build_rate_limits(event: _TokenEvent, now: datetime) -> RateLimitsSnapshot 
         plan_type=plan_type if isinstance(plan_type, str) and plan_type else None,
         primary=primary,
         secondary=secondary,
-        source="codex_session_jsonl",
+        source=(
+            "codex_app_server"
+            if event.source_reference == "account/rateLimits/read"
+            else "codex_session_jsonl"
+        ),
         updated_at=event.timestamp,
         source_reference=event.source_reference,
         is_stale=now - event.timestamp > timedelta(minutes=30),
     )
+
+
+def _remaining_rate_windows(rate_limits: RateLimitsSnapshot | None) -> list[float]:
+    """Devuelve únicamente porcentajes restantes de ventanas existentes."""
+
+    # Rechaza ausencia de cuotas sin confundirla con disponibilidad.
+    if rate_limits is None:
+        return []
+    # Inicializa la lista de ventanas observadas.
+    remaining: list[float] = []
+    # Conserva la ventana primaria cuando existe.
+    if rate_limits.primary is not None:
+        remaining.append(rate_limits.primary.remaining_percent)
+    # Conserva la ventana secundaria cuando existe.
+    if rate_limits.secondary is not None:
+        remaining.append(rate_limits.secondary.remaining_percent)
+    # Devuelve los valores validados por el modelo.
+    return remaining
+
+
+def _quota_exhausted(rate_limits: RateLimitsSnapshot | None) -> bool:
+    """Indica si cualquier ventana real impide continuar trabajando."""
+
+    # Recupera las ventanas disponibles.
+    remaining = _remaining_rate_windows(rate_limits)
+    # Exige datos y detecta cualquier porcentaje agotado.
+    return bool(remaining) and any(value <= 0 for value in remaining)
+
+
+def _quota_available(rate_limits: RateLimitsSnapshot | None) -> bool:
+    """Indica si todas las ventanas informadas permiten nuevas tareas."""
+
+    # Recupera las ventanas disponibles.
+    remaining = _remaining_rate_windows(rate_limits)
+    # Exige datos y confirma que ninguna ventana siga agotada.
+    return bool(remaining) and all(value > 0 for value in remaining)
 
 
 def _derive_status(state: _SessionAccumulator) -> tuple[AgentState, str | None, str | None]:
@@ -1049,12 +1091,29 @@ class CodexAdapter(PlatformAdapter):
         self,
         sessions_dir: Path | None = None,
         executable: str = "codex",
+        rate_limit_probe: Callable[[], dict[str, object] | None] | None = None,
+        rate_limit_probe_interval_seconds: float = 60.0,
     ) -> None:
-        """Configura la carpeta local y el ejecutable usado para detección."""
+        """Configura sesiones, ejecutable y lectura oficial cacheada de cuotas."""
 
+        # Conserva la carpeta local de sesiones históricas.
         self._sessions_dir = sessions_dir or Path.home() / ".codex" / "sessions"
+        # Conserva el ejecutable utilizado por detección y app-server.
         self._executable = executable
+        # Mantiene cursores incrementales por archivo JSONL.
         self._file_cache: dict[Path, _FileCursor] = {}
+        # Utiliza la sonda oficial o el doble proporcionado por las pruebas.
+        self._rate_limit_probe = rate_limit_probe or CodexRateLimitProbe(executable).read
+        # Limita la frecuencia sin impedir un intervalo cero en pruebas.
+        self._rate_limit_probe_interval = timedelta(
+            seconds=max(0.0, rate_limit_probe_interval_seconds)
+        )
+        # Conserva la última lectura oficial válida como fallback temporal.
+        self._live_rate_event: _TokenEvent | None = None
+        # Registra el último intento para respetar el intervalo configurado.
+        self._live_rate_checked_at: datetime | None = None
+        # Conserva si la última lectura oficial mostraba bloqueo por cuota.
+        self._live_quota_exhausted: bool | None = None
 
     @property
     def platform_id(self) -> str:
@@ -1066,6 +1125,42 @@ class CodexAdapter(PlatformAdapter):
         """Obtiene la telemetría real sin bloquear el bucle asíncrono."""
 
         return await asyncio.to_thread(self._collect_sync)
+
+    def _read_live_rate_event(
+        self,
+        now: datetime,
+        executable_available: bool,
+    ) -> tuple[_TokenEvent | None, bool]:
+        """Consulta app-server con caché y devuelve si hubo una lectura nueva."""
+
+        # Evita abrir app-server cuando Codex no está disponible.
+        if not executable_available:
+            return None, False
+        # Reutiliza la última lectura dentro del intervalo configurado.
+        if (
+            self._live_rate_checked_at is not None
+            and now - self._live_rate_checked_at < self._rate_limit_probe_interval
+        ):
+            return self._live_rate_event, False
+        # Registra el intento antes de ejecutar una operación potencialmente lenta.
+        self._live_rate_checked_at = now
+        # Ejecuta la sonda sustituible y tolera fallos locales controlados.
+        try:
+            live_limits = self._rate_limit_probe()
+        except (OSError, RuntimeError, ValueError):
+            return self._live_rate_event, False
+        # Conserva el último valor válido cuando app-server no responde.
+        if live_limits is None:
+            return self._live_rate_event, False
+        # Convierte la respuesta oficial al evento compartido por el adaptador.
+        self._live_rate_event = _TokenEvent(
+            timestamp=now,
+            source_reference="account/rateLimits/read",
+            info={},
+            rate_limits=live_limits,
+        )
+        # Informa de que existe una observación nueva para la máquina de estados.
+        return self._live_rate_event, True
 
     def _collect_sync(self) -> PlatformSnapshot:
         """Actualiza cursores y construye una instantánea sanitizada."""
@@ -1090,13 +1185,47 @@ class CodexAdapter(PlatformAdapter):
             )
         now = datetime.now(UTC)
         usage_event = active_state.latest_usage or _latest_usage_event(self._file_cache)
-        rate_event = _latest_rate_event(self._file_cache)
+        # Consulta cuotas actuales sin iniciar tareas ni consumir tokens de modelo.
+        live_rate_event, live_rate_refreshed = self._read_live_rate_event(
+            now,
+            executable_available,
+        )
+        # Utiliza JSONL únicamente cuando no existe una lectura oficial válida.
+        rate_event = live_rate_event or _latest_rate_event(self._file_cache)
         usage = _build_usage_breakdown(usage_event) if usage_event is not None else None
         thread_total = usage.thread_total if usage is not None else None
         rate_limits = _build_rate_limits(rate_event, now) if rate_event is not None else None
         primary = rate_limits.primary if rate_limits is not None else None
         secondary = rate_limits.secondary if rate_limits is not None else None
         status, status_reason, status_message = _derive_status(active_state)
+        # Aplica estados de cuota solo cuando la fuente oficial acaba de responder.
+        if (
+            live_rate_refreshed
+            and rate_limits is not None
+            and rate_limits.source == "codex_app_server"
+            and not rate_limits.is_stale
+        ):
+            # Calcula el bloqueo actual de todas las ventanas informadas.
+            current_live_exhausted = _quota_exhausted(rate_limits)
+            # Mantiene espera cuando cualquier ventana continúa agotada.
+            if current_live_exhausted:
+                status = AgentState.WAITING
+                status_reason = "usage_limit_exceeded"
+                status_message = "Límite de uso agotado; consulta el reinicio de cuota."
+            # Publica restauración cuando antes existía un bloqueo confirmado.
+            elif _quota_available(rate_limits) and (
+                self._live_quota_exhausted is True or status_reason == "usage_limit_exceeded"
+            ):
+                status = AgentState.IDLE
+                status_reason = "usage_limit_restored"
+                status_message = "La cuota de Codex vuelve a estar disponible."
+            # Conserva el resultado para detectar la siguiente transición.
+            self._live_quota_exhausted = current_live_exhausted
+        # Construye la tarea con el estado de cuota ya actualizado.
+        task = _build_task(active_state, status)
+        # Sustituye el mensaje antiguo de límite cuando la cuota fue restaurada.
+        if task is not None and status_reason == "usage_limit_restored":
+            task = task.model_copy(update={"activity": status_message})
         return PlatformSnapshot(
             platform_id=self.platform_id,
             display_name="OpenAI Codex",
@@ -1110,7 +1239,13 @@ class CodexAdapter(PlatformAdapter):
             rolling_remaining_pct=(
                 round(primary.remaining_percent) if primary is not None else None
             ),
-            next_reset_at=primary.resets_at if primary is not None else None,
+            next_reset_at=(
+                primary.resets_at
+                if primary is not None
+                else secondary.resets_at
+                if secondary is not None
+                else None
+            ),
             active_agents=0,
             agents=[],
             token_usage=thread_total,
@@ -1118,6 +1253,6 @@ class CodexAdapter(PlatformAdapter):
             rate_limits=rate_limits,
             session=_build_session(active_state),
             project=_build_project(active_state),
-            task=_build_task(active_state, status),
+            task=task,
             recent_activity=list(reversed(active_state.activity)),
         )

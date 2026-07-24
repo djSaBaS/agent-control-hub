@@ -11,7 +11,9 @@ from pathlib import Path
 
 from agent_control_hub.adapter_factory import AdapterSelection, build_adapter_selection
 from agent_control_hub.adapters import MockAdapter
+from agent_control_hub.alerts import WindowsNotificationSink
 from agent_control_hub.config import load_settings
+from agent_control_hub.models import DeviceSnapshot
 from agent_control_hub.protocol import encode_snapshot
 from agent_control_hub.snapshot_service import SnapshotService
 from agent_control_hub.transports import SerialTransport
@@ -57,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fuerza datos simulados e ignora la selección de plataformas.",
     )
+    parser.add_argument(
+        "--notify-windows",
+        action="store_true",
+        help="Muestra una notificación de Windows cuando se restaura una cuota.",
+    )
     return parser
 
 
@@ -69,11 +76,11 @@ def _build_mock_selection() -> AdapterSelection:
     )
 
 
-async def collect_snapshot(service: SnapshotService) -> bytes:
-    """Recoge las plataformas configuradas y devuelve NDJSON."""
+async def collect_snapshot(service: SnapshotService) -> DeviceSnapshot:
+    """Recoge las plataformas configuradas y devuelve el modelo validado."""
 
-    snapshot = await service.collect()
-    return encode_snapshot(snapshot)
+    # Conserva alertas y plataformas antes de serializar la captura.
+    return await service.collect()
 
 
 def write_snapshot_file(path: Path, payload: bytes) -> bool:
@@ -116,6 +123,10 @@ def main(args: argparse.Namespace) -> int:
         selection.adapters,
         visible_platform_ids=selection.visible_platform_ids,
     )
+    # Activa globos nativos únicamente cuando se solicita expresamente.
+    notification_sink = WindowsNotificationSink(
+        enabled=bool(getattr(args, "notify_windows", False))
+    )
     interval = args.interval if args.interval is not None else settings.update_interval_seconds
     if interval <= 0:
         raise ValueError("El intervalo debe ser mayor que cero.")
@@ -126,7 +137,12 @@ def main(args: argparse.Namespace) -> int:
 
     try:
         while True:
-            payload = asyncio.run(collect_snapshot(service))
+            # Recoge una captura validada con posibles eventos operativos.
+            snapshot = asyncio.run(collect_snapshot(service))
+            # Entrega únicamente alertas nuevas al centro de notificaciones.
+            notification_sink.dispatch(snapshot.alerts)
+            # Codifica el mismo modelo que reciben web y dispositivo físico.
+            payload = encode_snapshot(snapshot)
             if transport is not None:
                 transport.send(payload)
             if args.output is not None and not write_snapshot_file(args.output, payload):

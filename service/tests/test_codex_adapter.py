@@ -127,3 +127,67 @@ def test_codex_adapter_is_offline_without_cli_or_sessions(tmp_path: Path) -> Non
     assert snapshot.status == AgentState.OFFLINE
     assert snapshot.token_usage is None
     assert snapshot.rate_limits is None
+
+
+def test_codex_adapter_detects_early_live_quota_reset(tmp_path: Path) -> None:
+    """Prioriza app-server y distingue agotamiento de restauración real."""
+
+    # Crea una sesión mínima para conservar metadatos de la plataforma.
+    session = tmp_path / "rollout-live-rate.jsonl"
+    # Escribe un consumo sin ventanas para obligar a utilizar la sonda oficial.
+    session.write_text(
+        _record("2026-07-24T12:00:00Z", 1_000, None, None) + "\n",
+        encoding="utf-8",
+    )
+    # Prepara dos respuestas consecutivas: agotada y restaurada.
+    live_responses = iter(
+        [
+            {
+                "limit_id": "codex",
+                "plan_type": "plus",
+                "primary": {
+                    "used_percent": 100.0,
+                    "window_minutes": 10_080,
+                    "resets_at": 1_785_322_523,
+                },
+                "secondary": None,
+            },
+            {
+                "limit_id": "codex",
+                "plan_type": "plus",
+                "primary": {
+                    "used_percent": 0.0,
+                    "window_minutes": 10_080,
+                    "resets_at": 1_785_927_323,
+                },
+                "secondary": None,
+            },
+        ]
+    )
+    # Construye el adaptador con una sonda determinista y sin caché temporal.
+    adapter = CodexAdapter(
+        sessions_dir=tmp_path,
+        executable="python",
+        rate_limit_probe=lambda: next(live_responses),
+        rate_limit_probe_interval_seconds=0,
+    )
+
+    # Ejecuta la primera lectura oficial agotada.
+    exhausted = asyncio.run(adapter.collect())
+    # Ejecuta una segunda lectura que se restaura antes de la fecha anterior.
+    restored = asyncio.run(adapter.collect())
+
+    # Confirma que la primera lectura bloquea nuevas tareas.
+    assert exhausted.status == AgentState.WAITING
+    # Confirma el motivo explícito del bloqueo.
+    assert exhausted.status_reason == "usage_limit_exceeded"
+    # Confirma que la segunda lectura detecta la restauración real.
+    assert restored.status == AgentState.IDLE
+    # Confirma el motivo utilizado por alertas y prototipo.
+    assert restored.status_reason == "usage_limit_restored"
+    # Confirma que se utiliza la fuente oficial en vivo.
+    assert restored.rate_limits is not None
+    # Comprueba la identidad de la fuente.
+    assert restored.rate_limits.source == "codex_app_server"
+    # Comprueba que la cuota vuelve a estar disponible.
+    assert restored.rolling_remaining_pct == 100
