@@ -1,0 +1,55 @@
+name: "Temporal · Aplicar visor de Hermes"
+
+on:
+  push:
+    branches:
+      - agent/hermes-sqlite-telemetry
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: "1 · Descargar rama"
+        uses: actions/checkout@v4
+        with:
+          ref: agent/hermes-sqlite-telemetry
+          fetch-depth: 0
+
+      - name: "2 · Preparar Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "3 · Aplicar cambios deterministas"
+        run: python scripts/internal/apply_hermes_dashboard.py
+
+      - name: "4 · Confirmar que solo cambian archivos esperados"
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          printf '%s\n' "$changed"
+          unexpected="$(printf '%s\n' "$changed" | grep -Ev '^(tools/pc-viewer/index.html|scripts/run-codex-preview.ps1)$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Archivos inesperados modificados:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+
+      - name: "5 · Publicar migración"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No hay cambios pendientes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/pc-viewer/index.html scripts/run-codex-preview.ps1
+          git commit -m "Mostrar telemetría operativa de Hermes"
+          git push origin HEAD:agent/hermes-sqlite-telemetry
