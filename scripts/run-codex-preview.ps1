@@ -128,12 +128,12 @@ function Get-CompatiblePythonRuntime {
     throw "No se ha encontrado Python 3.11 o superior. Ejecuta 'python --version' y comprueba que esté disponible en PATH."
 }
 
-# Comprueba que el visor existe antes de modificar el entorno local.
+# Comprueba que el visor exista antes de modificar el entorno local.
 if (-not (Test-Path -LiteralPath $ViewerSource)) {
     # Detiene una instalación incompleta.
     throw "No se encuentra el visor local en $ViewerSource"
 }
-# Comprueba que existe la configuración de plataformas.
+# Comprueba que exista la configuración de plataformas.
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
     # Detiene una instalación incompleta.
     throw "No se encuentra la configuración de plataformas en $ConfigPath"
@@ -198,11 +198,14 @@ Write-Host "[3/4] Preparando la vista web protegida en $WebRoot..." -ForegroundC
 New-Item -Path $WebRoot -ItemType Directory -Force | Out-Null
 # Copia el visor HTML.
 Copy-Item -LiteralPath $ViewerSource -Destination $ViewerTarget -Force
-# Instala la política local y comprueba la exposición de red.
-Install-AgentControlViewerSecurity \
-    -SecuritySource $ViewerSecuritySource \
-    -WebRoot $WebRoot \
-    -SkipNetworkIsolationCheck:$SkipNetworkIsolationCheck
+# Agrupa los parámetros de instalación de la política Apache.
+$ViewerSecurityParameters = @{
+    SecuritySource = $ViewerSecuritySource
+    WebRoot = $WebRoot
+    SkipNetworkIsolationCheck = $SkipNetworkIsolationCheck
+}
+# Instala la restricción local y comprueba la exposición de red.
+Install-AgentControlViewerSecurity @ViewerSecurityParameters
 
 # Define la URL loopback del visor.
 $PreviewUrl = "http://localhost/agent-control-hub/"
