@@ -362,10 +362,12 @@ def _default_gateway_probe() -> str:
             capture_output=True,
             check=False,
             text=True,
-            timeout=3.0,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10.0,
         )
     # Controla procesos bloqueados o errores del sistema.
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
         return "unknown"
     # Une salida estándar y de error para interpretar ambos códigos de retorno.
     output = f"{completed.stdout}\n{completed.stderr}".casefold()
@@ -547,7 +549,7 @@ def _load_messages(
             _HermesMessage(
                 message_id=message_id,
                 role=role,
-                content=_sanitize_text(row["content"], 300),
+                content=_sanitize_text(row["content"], 500),
                 tool_name=_optional_text(row["tool_name"], 80),
                 tool_names=_tool_names(row["tool_calls"]),
                 timestamp=timestamp,
@@ -655,6 +657,8 @@ def _build_activity(messages: list[_HermesMessage]) -> list[ActivityItem]:
         # Omite roles internos no confirmados.
         else:
             continue
+        # Acota el resumen al contrato público antes de validar el evento.
+        summary = _optional_text(summary, 220)
         # Añade el evento normalizado.
         activity.append(
             ActivityItem(
@@ -844,13 +848,21 @@ class HermesAdapter(PlatformAdapter):
         usage = _build_usage(session, context_window)
         # Construye la tarea visible con título real de Hermes.
         task = TaskInfo(
-            display_name=session.title
-            or (latest_user.content if latest_user is not None else None),
-            conversation_name=session.title,
-            objective=latest_user.content if latest_user is not None else None,
+            display_name=_optional_text(
+                session.title or (latest_user.content if latest_user is not None else None),
+                180,
+            ),
+            conversation_name=_optional_text(session.title, 120),
+            objective=_optional_text(
+                latest_user.content if latest_user is not None else None,
+                500,
+            ),
             status=status,
-            activity=status_message,
-            last_result=latest_assistant.content if latest_assistant is not None else None,
+            activity=_optional_text(status_message, 180),
+            last_result=_optional_text(
+                latest_assistant.content if latest_assistant is not None else None,
+                220,
+            ),
             started_at=session.started_at,
             last_activity_at=session.last_activity_at,
         )

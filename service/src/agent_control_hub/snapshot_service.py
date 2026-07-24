@@ -77,6 +77,12 @@ class SnapshotService:
                         display_name=adapter.platform_id.replace("-", " ").title(),
                         # Marca la plataforma como fuera de línea.
                         status=AgentState.OFFLINE,
+                        # Distingue un fallo interno de una fuente realmente ausente.
+                        status_reason="adapter_exception",
+                        # Publica solo el tipo de error y nunca su contenido sensible.
+                        status_message=(
+                            f"El adaptador falló durante la captura ({type(result).__name__})."
+                        ),
                     )
                 )
                 # Continúa procesando el resto de plataformas.
