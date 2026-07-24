@@ -4,12 +4,12 @@
 enum class NavigationAction {
     // Indica que no se ha producido ninguna acción.
     None,
-    // Solicita mostrar la pantalla principal.
-    ShowDashboard,
-    // Solicita mostrar la pantalla de agentes.
-    ShowAgents,
-    // Solicita mostrar la pantalla de configuración.
-    ShowSettings,
+    // Solicita mover la selección o regresar a la vista anterior.
+    Previous,
+    // Solicita abrir la vista seleccionada o confirmar una acción.
+    Select,
+    // Solicita mover la selección o avanzar a la vista siguiente.
+    Next,
 };
 
 // Inicializa la capa de entrada específica del dispositivo.
