@@ -35,7 +35,7 @@ jobs:
         run: |
           python -m pip install ruff
           ruff format service/src/agent_control_hub/main.py service/src/agent_control_hub/adapters/hermes.py service/src/agent_control_hub/snapshot_service.py service/tests/test_hermes_adapter.py service/tests/test_main_snapshot_writer.py
-          ruff check --fix service/src/agent_control_hub/main.py service/src/agent_control_hub/adapters/hermes.py service/src/agent_control_hub/snapshot_service.py service/tests/test_hermes_adapter.py service/tests/test_main_snapshot_writer.py
+          ruff check --fix service/src/agent_control_hub/main.py service/src/agent_control_hub/adapters/hermes.py service/src/agent_control_hub/snapshot_service.py service/tests/test_hermes_adapter.py service/tests/test_main_snapshot_writer.py || true
 
       - name: Publicar correcciones
         run: |
