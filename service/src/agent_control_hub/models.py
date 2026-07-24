@@ -156,6 +156,28 @@ class PlatformRuntimeInfo(BaseModel):
     cost_status: str | None = Field(default=None, max_length=40)
 
 
+class AlertSnapshot(BaseModel):
+    """Alerta operativa retenida para Windows, visor y dispositivo físico."""
+
+    # Impide aceptar campos no documentados en el protocolo.
+    model_config = ConfigDict(extra="forbid")
+
+    # Identifica el evento para deduplicarlo entre capturas.
+    alert_id: str = Field(min_length=1, max_length=120)
+    # Define el comportamiento que debe ejecutar cada interfaz.
+    alert_type: str = Field(min_length=1, max_length=80)
+    # Identifica la plataforma que originó el evento.
+    platform_id: str = Field(min_length=1, max_length=40)
+    # Publica un título breve y apto para notificaciones.
+    title: str = Field(min_length=1, max_length=120)
+    # Publica una explicación breve sin datos sensibles.
+    message: str = Field(min_length=1, max_length=240)
+    # Clasifica la importancia visual del evento.
+    severity: str = Field(default="info", min_length=1, max_length=20)
+    # Registra el instante real en el que se observó la transición.
+    created_at: datetime
+
+
 class PlatformSnapshot(BaseModel):
     """Instantánea agregada de una plataforma completa."""
 
@@ -193,3 +215,5 @@ class DeviceSnapshot(BaseModel):
     generated_at: datetime
     total_cost_today: float = Field(default=0, ge=0)
     platforms: list[PlatformSnapshot] = Field(default_factory=list)
+    # Retiene eventos recientes para lectores que no consultan cada segundo.
+    alerts: list[AlertSnapshot] = Field(default_factory=list, max_length=20)

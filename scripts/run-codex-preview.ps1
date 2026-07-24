@@ -3,7 +3,8 @@ param(
     [string]$WebRoot = "C:\wamp64\www\agent-control-hub",
     [int]$IntervalSeconds = 5,
     [switch]$Once,
-    [switch]$DoNotOpenBrowser
+    [switch]$DoNotOpenBrowser,
+    [switch]$DisableWindowsNotifications
 )
 
 $ErrorActionPreference = "Stop"
@@ -157,6 +158,10 @@ $ServiceArguments = @(
     "--output",
     $SnapshotPath
 )
+if (-not $DisableWindowsNotifications) {
+    # Solicita globos nativos cuando una cuota se restaura realmente.
+    $ServiceArguments += "--notify-windows"
+}
 if ($Once) {
     $ServiceArguments += "--once"
 } else {

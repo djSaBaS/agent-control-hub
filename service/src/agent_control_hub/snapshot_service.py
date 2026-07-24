@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 # Importa el contrato de adaptadores y los modelos normalizados.
 from agent_control_hub.adapters.base import PlatformAdapter
+from agent_control_hub.alerts import QuotaAlertTracker
 from agent_control_hub.models import AgentState, DeviceSnapshot, PlatformSnapshot
 
 
@@ -22,11 +23,15 @@ class SnapshotService:
         adapters: Sequence[PlatformAdapter],
         # Recibe los identificadores visibles o todos cuando se omite.
         visible_platform_ids: set[str] | frozenset[str] | None = None,
+        # Permite sustituir el detector por un doble controlado en pruebas.
+        alert_tracker: QuotaAlertTracker | None = None,
     ) -> None:
-        """Guarda adaptadores monitorizados y el filtro del dispositivo."""
+        """Guarda adaptadores monitorizados, visibilidad y estado de alertas."""
 
         # Copia la secuencia para evitar mutaciones externas inesperadas.
         self._adapters = tuple(adapters)
+        # Conserva el detector entre capturas para observar transiciones reales.
+        self._alert_tracker = alert_tracker or QuotaAlertTracker()
         # Conserva ausencia de filtro como visibilidad completa.
         if visible_platform_ids is None:
             # Marca que cualquier plataforma puede enviarse al dispositivo.
@@ -96,12 +101,18 @@ class SnapshotService:
             # Recorre todas las plataformas agregadas.
             for platform in platforms
         )
+        # Registra una única fecha para snapshot y alertas.
+        generated_at = datetime.now(UTC)
+        # Detecta restauraciones reales utilizando el estado de la captura anterior.
+        alerts = self._alert_tracker.update(platforms, generated_at)
         # Devuelve el mensaje completo para el dispositivo.
         return DeviceSnapshot(
             # Registra la fecha UTC de creación de la instantánea.
-            generated_at=datetime.now(UTC),
+            generated_at=generated_at,
             # Redondea el total para evitar artefactos de coma flotante.
             total_cost_today=round(total_cost_today, 6),
             # Adjunta las plataformas en el orden configurado.
             platforms=platforms,
+            # Adjunta alertas recientes para Windows, web y hardware.
+            alerts=alerts,
         )

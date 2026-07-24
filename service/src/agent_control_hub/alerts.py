@@ -2,14 +2,18 @@
 
 # Importa Base64 para transportar texto Unicode de forma segura a PowerShell.
 import base64
+
 # Importa el nombre de plataforma actual para limitar las notificaciones a Windows.
 import os
+
 # Importa procesos para lanzar la notificación sin bloquear el bucle principal.
 import subprocess
+
+# Importa tipos invocables para facilitar pruebas sin procesos reales.
+from collections.abc import Callable
+
 # Importa fechas UTC para caducar eventos retenidos para el dispositivo.
 from datetime import UTC, datetime, timedelta
-# Importa tipos invocables para facilitar pruebas sin procesos reales.
-from typing import Callable
 
 # Importa los modelos públicos utilizados por el visor y el prototipo.
 from agent_control_hub.models import AlertSnapshot, PlatformSnapshot
@@ -111,8 +115,7 @@ class QuotaAlertTracker:
             if previous_exhausted is True and not exhausted and _is_quota_available(platform):
                 # Construye un identificador estable y único por instante observado.
                 alert_id = (
-                    f"{platform.platform_id}-quota-restored-"
-                    f"{int(now.timestamp() * 1_000_000)}"
+                    f"{platform.platform_id}-quota-restored-{int(now.timestamp() * 1_000_000)}"
                 )
                 # Añade el evento que consumen Windows, el visor y el prototipo.
                 self._alerts.append(

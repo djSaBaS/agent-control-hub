@@ -2,18 +2,25 @@
 
 # Importa JSON para construir y analizar mensajes JSON-RPC delimitados por línea.
 import json
+
 # Importa colas seguras entre hilos para leer stdout sin bloquear el servicio.
 import queue
+
 # Importa la resolución del ejecutable de Codex disponible en PATH.
 import shutil
+
 # Importa la gestión de procesos utilizada para abrir app-server en modo local.
 import subprocess
+
 # Importa hilos para consumir stdout de forma compatible con Windows.
 import threading
+
 # Importa tiempo monotónico para aplicar un límite total a la consulta.
 import time
+
 # Importa utilidades de contexto para cerrar procesos sin ocultar otros errores.
 from contextlib import suppress
+
 # Importa tipos de lectura de texto para mantener el tipado estricto.
 from typing import TextIO
 
