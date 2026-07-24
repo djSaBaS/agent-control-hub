@@ -11,14 +11,14 @@ param(
     [switch]$DoNotOpenBrowser,
     # Permite desactivar los avisos nativos de Windows.
     [switch]$DisableWindowsNotifications,
-    # Permite omitir únicamente la comprobación de exposición por IP local.
+    # Permite omitir únicamente la comprobación activa por IP local.
     [switch]$SkipNetworkIsolationCheck
 )
 
 # Detiene el script ante cualquier error no controlado.
 $ErrorActionPreference = "Stop"
 
-# Resuelve las rutas del repositorio y del servicio sin depender del directorio actual.
+# Resuelve la raíz del repositorio sin depender del directorio actual.
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 # Resuelve la carpeta del servicio Python.
 $ServiceRoot = Join-Path $RepositoryRoot "service"
@@ -26,6 +26,8 @@ $ServiceRoot = Join-Path $RepositoryRoot "service"
 $ViewerSource = Join-Path $RepositoryRoot "tools\pc-viewer\index.html"
 # Resuelve la política Apache que limita el visor al propio equipo.
 $ViewerSecuritySource = Join-Path $RepositoryRoot "tools\pc-viewer\.htaccess"
+# Resuelve el helper común de aislamiento.
+$ViewerSecurityHelper = Join-Path $RepositoryRoot "scripts\viewer-security.ps1"
 # Resuelve la configuración conjunta de Codex y Hermes.
 $ConfigPath = Join-Path $ServiceRoot "config.codex-preview.json"
 # Resuelve el entorno virtual aislado.
@@ -36,8 +38,14 @@ $PythonExecutable = Join-Path $VirtualEnvironment "Scripts\python.exe"
 $SnapshotPath = Join-Path $WebRoot "snapshot.json"
 # Resuelve el destino del HTML.
 $ViewerTarget = Join-Path $WebRoot "index.html"
-# Resuelve el destino de la política Apache.
-$ViewerSecurityTarget = Join-Path $WebRoot ".htaccess"
+
+# Comprueba que el helper exista antes de cargar funciones de seguridad.
+if (-not (Test-Path -LiteralPath $ViewerSecurityHelper)) {
+    # Evita publicar el visor sin comprobar su aislamiento.
+    throw "No se encuentra el helper de seguridad en $ViewerSecurityHelper"
+}
+# Carga las funciones de aislamiento en el ámbito actual.
+. $ViewerSecurityHelper
 
 # Busca un intérprete compatible sin exigir una versión menor concreta.
 function Get-CompatiblePythonRuntime {
@@ -120,81 +128,10 @@ function Get-CompatiblePythonRuntime {
     throw "No se ha encontrado Python 3.11 o superior. Ejecuta 'python --version' y comprueba que esté disponible en PATH."
 }
 
-# Comprueba si Apache publica el visor mediante una dirección IPv4 no local.
-function Assert-ViewerIsLocalOnly {
-    # Recibe la ruta relativa utilizada por el visor.
-    param(
-        # Define la ruta HTTP que se probará en cada interfaz local.
-        [string]$RelativePath = "agent-control-hub/"
-    )
-
-    # Recupera direcciones IPv4 utilizables distintas de loopback.
-    $Addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        # Conserva únicamente direcciones preferidas y no locales.
-        Where-Object {
-            $_.AddressState -eq "Preferred" -and
-            $_.IPAddress -notlike "127.*" -and
-            $_.IPAddress -ne "0.0.0.0"
-        } |
-        # Elimina direcciones duplicadas.
-        Select-Object -ExpandProperty IPAddress -Unique
-
-    # Informa cuando el equipo no tiene una interfaz de red comprobable.
-    if ($null -eq $Addresses -or @($Addresses).Count -eq 0) {
-        # Mantiene la ejecución porque no existe una superficie de red detectada.
-        Write-Host "No se detectaron direcciones IPv4 de red para comprobar WAMP." -ForegroundColor DarkYellow
-        # Finaliza la comprobación.
-        return
-    }
-
-    # Recorre cada dirección asignada al equipo.
-    foreach ($Address in @($Addresses)) {
-        # Construye una URL usando exclusivamente una dirección local detectada.
-        $ProbeUrl = "http://${Address}/${RelativePath}"
-        # Intenta recuperar el visor con un timeout breve.
-        try {
-            # Realiza la petición sin usar contenido almacenado en caché.
-            $Response = Invoke-WebRequest \
-                -Uri $ProbeUrl \
-                -UseBasicParsing \
-                -TimeoutSec 2 \
-                -MaximumRedirection 0 \
-                -Headers @{ "Cache-Control" = "no-cache" }
-            # Detiene el arranque cuando Apache devuelve contenido a la red local.
-            if ($Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300) {
-                # Explica el riesgo y la forma de continuar tras corregir Apache.
-                throw "SEGURIDAD: el visor responde desde $ProbeUrl. Activa AllowOverride para $WebRoot o limita Apache a localhost antes de continuar."
-            }
-        } catch {
-            # Recupera una posible respuesta HTTP del error.
-            $ErrorResponse = $_.Exception.Response
-            # Continúa cuando Apache aplica correctamente la prohibición.
-            if ($null -ne $ErrorResponse -and [int]$ErrorResponse.StatusCode -eq 403) {
-                # Confirma la interfaz protegida.
-                Write-Host "Visor protegido frente a $Address (HTTP 403)." -ForegroundColor Green
-                # Continúa con la siguiente interfaz.
-                continue
-            }
-            # Propaga expresamente el fallo de exposición generado arriba.
-            if ($_.Exception.Message -like "SEGURIDAD:*") {
-                # Conserva el mensaje completo de la comprobación.
-                throw
-            }
-            # Informa de que la interfaz no respondió o no pudo verificarse.
-            Write-Host "No se pudo publicar el visor mediante $Address; comprobación sin exposición confirmada." -ForegroundColor DarkGray
-        }
-    }
-}
-
 # Comprueba que el visor existe antes de modificar el entorno local.
 if (-not (Test-Path -LiteralPath $ViewerSource)) {
     # Detiene una instalación incompleta.
     throw "No se encuentra el visor local en $ViewerSource"
-}
-# Comprueba que existe la política de seguridad del visor.
-if (-not (Test-Path -LiteralPath $ViewerSecuritySource)) {
-    # Evita publicar el visor sin la restricción local esperada.
-    throw "No se encuentra la política Apache en $ViewerSecuritySource"
 }
 # Comprueba que existe la configuración de plataformas.
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
@@ -261,16 +198,11 @@ Write-Host "[3/4] Preparando la vista web protegida en $WebRoot..." -ForegroundC
 New-Item -Path $WebRoot -ItemType Directory -Force | Out-Null
 # Copia el visor HTML.
 Copy-Item -LiteralPath $ViewerSource -Destination $ViewerTarget -Force
-# Copia la política que restringe Apache al propio equipo.
-Copy-Item -LiteralPath $ViewerSecuritySource -Destination $ViewerSecurityTarget -Force
-# Comprueba la exposición por interfaces de red salvo omisión explícita.
-if (-not $SkipNetworkIsolationCheck) {
-    # Ejecuta una comprobación defensiva antes de iniciar la captura.
-    Assert-ViewerIsLocalOnly
-} else {
-    # Deja constancia de que el usuario omitió una verificación de seguridad.
-    Write-Host "AVISO: se ha omitido la comprobación de aislamiento de WAMP." -ForegroundColor Yellow
-}
+# Instala la política local y comprueba la exposición de red.
+Install-AgentControlViewerSecurity \
+    -SecuritySource $ViewerSecuritySource \
+    -WebRoot $WebRoot \
+    -SkipNetworkIsolationCheck:$SkipNetworkIsolationCheck
 
 # Define la URL loopback del visor.
 $PreviewUrl = "http://localhost/agent-control-hub/"
