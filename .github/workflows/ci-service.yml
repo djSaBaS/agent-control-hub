@@ -52,7 +52,7 @@ jobs:
 
       # Instala la versión de Python correspondiente y activa la caché de pip.
       - name: "2 · Preparar Python ${{ matrix.python-version }}"
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "${{ matrix.python-version }}"
           cache: pip
@@ -192,7 +192,7 @@ jobs:
 
       # Prepara la versión mínima soportada por el proyecto.
       - name: "2 · Preparar Python 3.11"
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip

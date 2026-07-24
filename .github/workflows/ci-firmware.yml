@@ -57,7 +57,7 @@ jobs:
 
       # Prepara Python para ejecutar PlatformIO Core.
       - name: "2 · Preparar Python"
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
