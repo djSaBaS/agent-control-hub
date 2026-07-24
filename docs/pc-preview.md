@@ -24,12 +24,35 @@ El visor prioriza la información operativa:
 - Causa del estado y mensaje breve.
 - Proyecto obtenido desde `session_meta.payload.cwd`, reducido a un alias seguro.
 - Sesión, origen, versión de la CLI y última actividad.
-- Tarea visible derivada del último mensaje del usuario, objetivo útil o actualización del agente.
+- Conversación o título oficial cuando la fuente lo incluye.
+- Objetivo real de trabajo separado del título de conversación.
+- Actividad actual separada del último resultado técnico.
+- Pendiente o bloqueo operativo extraído del último mensaje cuando está etiquetado.
 - Actividad reciente: herramientas, comandos, parches, pruebas, resultados y errores.
-- Último resultado técnico disponible.
 - Cuotas, duración de cada ventana y fecha de reinicio.
 
 La tarea principal no se presenta como subagente. Los agentes permanecerán vacíos hasta que existan eventos explícitos que permitan identificarlos.
+
+## Conversación, objetivo y resultado
+
+El modelo `TaskInfo` diferencia cinco conceptos:
+
+- `conversation_name`: título breve informado por Codex cuando existe.
+- `objective`: objetivo persistente y sanitizado del hilo.
+- `activity`: estado operativo actual, por ejemplo ejecutar una herramienta o esperar cuota.
+- `last_result`: último resultado técnico útil anterior al estado actual.
+- `pending`: bloqueo o trabajo pendiente declarado explícitamente.
+
+La prioridad del nombre visible es:
+
+1. Título oficial de conversación.
+2. Primera frase del objetivo como título determinista.
+3. Último mensaje real del usuario.
+4. Objetivo útil o actualización del agente como compatibilidad.
+
+Los envoltorios internos que contienen frases como `Continue working toward the active thread goal` no se consideran mensajes del usuario. El adaptador extrae únicamente el contenido de `<objective>...</objective>` o el argumento `objective` de herramientas `create_goal` y `update_goal`.
+
+Un límite agotado modifica el estado actual, pero no sustituye `last_result`. Así el visor puede mostrar a la vez que Codex está esperando cuota y que la última regresión terminó correctamente.
 
 ## Consumo
 
@@ -70,7 +93,7 @@ Después del primer análisis solo se leen los bytes añadidos. Si el archivo se
 
 Antes de publicar texto se eliminan o sustituyen:
 
-- Rutas absolutas de Windows, Linux o macOS.
+- Rutas absolutas de Windows, Linux o macOS, incluidas rutas con espacios y nombre de archivo.
 - Correos electrónicos.
 - URLs.
 - Tokens con formato `sk-*`.

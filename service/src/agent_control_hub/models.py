@@ -117,8 +117,12 @@ class TaskInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     display_name: str | None = Field(default=None, max_length=180)
+    conversation_name: str | None = Field(default=None, max_length=120)
+    objective: str | None = Field(default=None, max_length=500)
     status: AgentState
     activity: str | None = Field(default=None, max_length=180)
+    last_result: str | None = Field(default=None, max_length=220)
+    pending: str | None = Field(default=None, max_length=220)
     started_at: datetime | None = None
     last_activity_at: datetime | None = None
 
