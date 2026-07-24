@@ -89,11 +89,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $Results = Invoke-ScriptAnalyzer \
-              -Path ./scripts \
-              -Recurse \
-              -Severity @("Error", "Warning") \
-              -Settings PSGallery
+          $AnalyzerParameters = @{
+              Path = "./scripts"
+              Recurse = $true
+              Severity = @("Error", "Warning")
+              Settings = "PSGallery"
+          }
+          $Results = Invoke-ScriptAnalyzer @AnalyzerParameters
           if ($Results) {
               $Results | Format-Table -AutoSize
               throw "PSScriptAnalyzer ha detectado errores o advertencias."
