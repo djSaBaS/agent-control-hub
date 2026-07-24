@@ -151,7 +151,7 @@ jobs:
       # Guarda los binarios y logs incluso cuando la compilación falla.
       - name: "10 · Guardar firmware y logs"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "firmware-${{ matrix.pio-environment }}"
           path: "firmware/core2/ci-results/artifacts-${{ matrix.pio-environment }}/"

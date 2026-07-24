@@ -136,7 +136,7 @@ jobs:
       # Conserva los informes aunque alguna validación haya fallado.
       - name: "10 · Guardar informes de pruebas y tipado"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "informes-python-${{ matrix.python-version }}"
           path: |
@@ -220,7 +220,7 @@ jobs:
 
       # Guarda las distribuciones para comprobarlas o usarlas posteriormente.
       - name: "6 · Guardar paquete construido"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: servicio-python-distribuciones
           path: service/dist/*
