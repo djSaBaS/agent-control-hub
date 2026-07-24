@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 
 from agent_control_hub.adapter_factory import AdapterSelection, build_adapter_selection
@@ -102,11 +103,8 @@ def write_snapshot_file(path: Path, payload: bytes) -> bool:
         return False
     finally:
         # Elimina el temporal si el reemplazo no llegó a consumirlo.
-        try:
+        with suppress(OSError):
             temporary_path.unlink(missing_ok=True)
-        except OSError:
-            # Un bloqueo externo del temporal no debe terminar el servicio.
-            pass
 
 
 def main(args: argparse.Namespace) -> int:
