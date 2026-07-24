@@ -8,8 +8,6 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # Importa Path para resolver los archivos públicos sin concatenaciones inseguras.
 from pathlib import Path
-# Importa Callable para tipar la clase manejadora devuelta por la factoría.
-from collections.abc import Callable
 # Importa urlsplit para separar la ruta de parámetros y fragmentos.
 from urllib.parse import urlsplit
 
@@ -37,21 +35,21 @@ class LocalViewerRequestHandler(BaseHTTPRequestHandler):
     viewer_directory = Path(".")
 
     # Sirve peticiones GET permitidas.
-    def do_GET(self) -> None:
+    def do_GET(self) -> None:  # noqa: N802
         """Devuelve el recurso solicitado cuando forma parte de la lista cerrada."""
 
         # Procesa la petición incluyendo el cuerpo de la respuesta.
         self._serve_request(include_body=True)
 
     # Sirve peticiones HEAD permitidas.
-    def do_HEAD(self) -> None:
+    def do_HEAD(self) -> None:  # noqa: N802
         """Devuelve únicamente cabeceras para comprobaciones locales."""
 
         # Procesa la petición sin transferir el cuerpo.
         self._serve_request(include_body=False)
 
     # Rechaza expresamente peticiones POST.
-    def do_POST(self) -> None:
+    def do_POST(self) -> None:  # noqa: N802
         """Impide utilizar el visor como receptor de datos o comandos."""
 
         # Devuelve el código estándar de método no permitido.
