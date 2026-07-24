@@ -23,6 +23,9 @@
 - Lectura incremental de JSONL con detección de truncado o rotación y memoria acotada.
 - Visor local reorganizado para priorizar estado, proyecto, tarea, resultados y actividad.
 - Fixtures y pruebas para compatibilidad, sanitización, límite agotado y lectura incremental.
+- Conversación, objetivo, actividad actual, último resultado y pendiente separados en el modelo de tarea.
+- Envoltorios `codex_internal_context` y plantillas internas descartados antes de generar títulos visibles.
+- Objetivos reales extraídos desde `<objective>`, `thread_goal_updated` y herramientas `create_goal`.
 
 ## 0.1.0 - 2026-07-22
 
