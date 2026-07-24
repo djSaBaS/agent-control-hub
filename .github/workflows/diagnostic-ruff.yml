@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   diagnostic:
-    name: "Guardar diagnóstico Ruff"
+    name: "Generar corrección Ruff"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -36,20 +36,17 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -e ".[dev]"
 
-      - name: "Ejecutar Ruff y conservar salida"
-        continue-on-error: true
+      - name: "Aplicar correcciones Ruff en copia de trabajo"
         run: |
-          mkdir -p test-results
-          set +e
-          python -m ruff check . --output-format=concise > test-results/ruff.log 2>&1
-          status=$?
-          echo "exit_code=$status" >> test-results/ruff.log
-          exit 0
+          set -euo pipefail
+          python -m ruff check src/agent_control_hub/adapters/codex.py --fix --unsafe-fixes
+          python -m ruff format src/agent_control_hub/adapters/codex.py
+          python -m ruff check src/agent_control_hub/adapters/codex.py
 
-      - name: "Guardar diagnóstico"
+      - name: "Guardar archivo corregido"
         uses: actions/upload-artifact@v4
         with:
-          name: diagnostic-ruff
-          path: service/test-results/ruff.log
+          name: corrected-codex-adapter
+          path: service/src/agent_control_hub/adapters/codex.py
           if-no-files-found: error
           retention-days: 1
