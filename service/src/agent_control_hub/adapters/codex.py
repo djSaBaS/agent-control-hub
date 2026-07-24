@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import shutil
 from collections import deque
@@ -74,9 +75,7 @@ class _SessionAccumulator:
     blocked_message: str | None = None
     error_message: str | None = None
     pending_tools: dict[str, str] = field(default_factory=dict)
-    activity: deque[ActivityItem] = field(
-        default_factory=lambda: deque(maxlen=_MAX_ACTIVITY_ITEMS)
-    )
+    activity: deque[ActivityItem] = field(default_factory=lambda: deque(maxlen=_MAX_ACTIVITY_ITEMS))
 
 
 @dataclass(slots=True)
@@ -282,9 +281,7 @@ def _output_failed(output: str) -> bool:
         return True
     if re.search(r'"ok"\s*:\s*false', output, flags=re.IGNORECASE):
         return True
-    if re.search(r'"failed"\s*:\s*[1-9]\d*', output, flags=re.IGNORECASE):
-        return True
-    return False
+    return bool(re.search(r'"failed"\s*:\s*[1-9]\d*', output, flags=re.IGNORECASE))
 
 
 def _output_summary(output: object) -> str | None:
@@ -632,14 +629,14 @@ def _consume_record(state: _SessionAccumulator, raw_line: bytes) -> None:
         _consume_response_item(state, payload, timestamp)
 
 
-def _new_cursor(path: Path, sessions_dir: Path, stat_result: object) -> _FileCursor:
+def _new_cursor(path: Path, sessions_dir: Path, stat_result: os.stat_result) -> _FileCursor:
     """Crea un cursor vacío para un archivo nuevo o rotado."""
 
-    file_id = getattr(stat_result, "st_ino", None)
-    modified_ns = int(getattr(stat_result, "st_mtime_ns"))
-    size_bytes = int(getattr(stat_result, "st_size"))
+    file_id = stat_result.st_ino
+    modified_ns = int(stat_result.st_mtime_ns)
+    size_bytes = int(stat_result.st_size)
     return _FileCursor(
-        file_id=file_id if isinstance(file_id, int) else None,
+        file_id=file_id,
         modified_ns=modified_ns,
         size_bytes=size_bytes,
         offset=0,
@@ -648,12 +645,12 @@ def _new_cursor(path: Path, sessions_dir: Path, stat_result: object) -> _FileCur
     )
 
 
-def _requires_reset(cursor: _FileCursor, stat_result: object) -> bool:
+def _requires_reset(cursor: _FileCursor, stat_result: os.stat_result) -> bool:
     """Detecta truncado, sustitución o reescritura de tamaño estable."""
 
-    file_id = getattr(stat_result, "st_ino", None)
-    modified_ns = int(getattr(stat_result, "st_mtime_ns"))
-    size_bytes = int(getattr(stat_result, "st_size"))
+    file_id = stat_result.st_ino
+    modified_ns = int(stat_result.st_mtime_ns)
+    size_bytes = int(stat_result.st_size)
     if isinstance(file_id, int) and cursor.file_id is not None and file_id != cursor.file_id:
         return True
     if size_bytes < cursor.offset:
@@ -661,7 +658,7 @@ def _requires_reset(cursor: _FileCursor, stat_result: object) -> bool:
     return modified_ns != cursor.modified_ns and size_bytes == cursor.offset
 
 
-def _read_incremental(path: Path, cursor: _FileCursor, stat_result: object) -> None:
+def _read_incremental(path: Path, cursor: _FileCursor, stat_result: os.stat_result) -> None:
     """Lee únicamente bytes nuevos y mantiene memoria limitada por línea."""
 
     with path.open("rb") as handle:
@@ -680,10 +677,10 @@ def _read_incremental(path: Path, cursor: _FileCursor, stat_result: object) -> N
             if len(remainder) > _MAX_JSON_LINE_BYTES:
                 remainder = b""
         cursor.remainder = remainder
-    file_id = getattr(stat_result, "st_ino", None)
-    cursor.file_id = file_id if isinstance(file_id, int) else None
-    cursor.modified_ns = int(getattr(stat_result, "st_mtime_ns"))
-    cursor.size_bytes = int(getattr(stat_result, "st_size"))
+    file_id = stat_result.st_ino
+    cursor.file_id = file_id
+    cursor.modified_ns = int(stat_result.st_mtime_ns)
+    cursor.size_bytes = int(stat_result.st_size)
 
 
 def _refresh_file_cache(
@@ -706,14 +703,14 @@ def _refresh_file_cache(
         cursor = file_cache.get(path)
         if cursor is None or _requires_reset(cursor, stat_result):
             cursor = _new_cursor(path, sessions_dir, stat_result)
-        if int(getattr(stat_result, "st_size")) > cursor.offset:
+        if int(stat_result.st_size) > cursor.offset:
             try:
                 _read_incremental(path, cursor, stat_result)
             except OSError:
                 continue
         else:
-            cursor.modified_ns = int(getattr(stat_result, "st_mtime_ns"))
-            cursor.size_bytes = int(getattr(stat_result, "st_size"))
+            cursor.modified_ns = int(stat_result.st_mtime_ns)
+            cursor.size_bytes = int(stat_result.st_size)
         file_cache[path] = cursor
     for deleted_path in set(file_cache) - active_paths:
         del file_cache[deleted_path]
@@ -747,22 +744,22 @@ def _latest_active_state(file_cache: dict[Path, _FileCursor]) -> _SessionAccumul
 def _latest_usage_event(file_cache: dict[Path, _FileCursor]) -> _TokenEvent | None:
     """Localiza el consumo más reciente disponible entre todas las sesiones."""
 
-    events = [
-        cursor.state.latest_usage
-        for cursor in file_cache.values()
-        if cursor.state.latest_usage is not None
-    ]
+    events: list[_TokenEvent] = []
+    for cursor in file_cache.values():
+        event = cursor.state.latest_usage
+        if event is not None:
+            events.append(event)
     return max(events, key=lambda event: event.timestamp) if events else None
 
 
 def _latest_rate_event(file_cache: dict[Path, _FileCursor]) -> _TokenEvent | None:
     """Localiza las últimas ventanas completas entre todas las sesiones."""
 
-    events = [
-        cursor.state.latest_rate_limits
-        for cursor in file_cache.values()
-        if cursor.state.latest_rate_limits is not None
-    ]
+    events: list[_TokenEvent] = []
+    for cursor in file_cache.values():
+        event = cursor.state.latest_rate_limits
+        if event is not None:
+            events.append(event)
     return max(events, key=lambda event: event.timestamp) if events else None
 
 
