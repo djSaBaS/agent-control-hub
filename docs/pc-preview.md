@@ -1,70 +1,87 @@
 # Vista en PC con datos reales de Codex
 
-## Qué comprueba
-
-Esta prueba utiliza la misma cadena que alimentará posteriormente al dispositivo físico:
+## Flujo comprobado
 
 ```text
-Archivos reales de Codex
-        ↓
-CodexAdapter
-        ↓
-SnapshotService
-        ↓
-snapshot.json sanitizado
-        ↓
-Visor web local
+%USERPROFILE%\.codex\sessions\rollout-*.jsonl
+                         ↓
+                  CodexAdapter
+                         ↓
+                  SnapshotService
+                         ↓
+              snapshot.json sanitizado
+                         ↓
+                 Visor web local
 ```
 
-No utiliza el adaptador simulado. El conector lee eventos `token_count` de:
+Los JSONL originales no se copian a WAMP. Solo se publica el modelo normalizado y una referencia relativa al archivo de origen.
 
-```text
-%USERPROFILE%\.codex\sessions
-```
+## Información principal
 
-Los archivos originales no se copian a WAMP. Solo se publica un JSON que contiene métricas normalizadas y una ruta relativa de referencia.
+El visor prioriza la información operativa:
 
-## Datos obtenidos
+- Estado real: inactivo, trabajando, esperando, completado, error o sin conexión.
+- Causa del estado y mensaje breve.
+- Proyecto obtenido desde `session_meta.payload.cwd`, reducido a un alias seguro.
+- Sesión, origen, versión de la CLI y última actividad.
+- Tarea visible derivada del último mensaje del usuario, objetivo útil o actualización del agente.
+- Actividad reciente: herramientas, comandos, parches, pruebas, resultados y errores.
+- Último resultado técnico disponible.
+- Cuotas, duración de cada ventana y fecha de reinicio.
 
-Cuando Codex los haya registrado, se muestran:
+La tarea principal no se presenta como subagente. Los agentes permanecerán vacíos hasta que existan eventos explícitos que permitan identificarlos.
 
-- Tokens de entrada acumulados en la sesión.
-- Tokens de entrada recuperados desde caché.
-- Tokens escritos en caché.
-- Tokens de salida.
-- Tokens de razonamiento.
-- Tokens totales acumulados en la sesión.
-- Tamaño de la ventana de contexto.
-- Porcentaje utilizado y restante de la ventana corta.
-- Porcentaje utilizado y restante de la ventana semanal.
-- Fecha de reinicio de cada ventana.
-- Tipo de plan informado por Codex.
-- Fecha de actualización del consumo y de los límites.
+## Consumo
 
-`tokens_today` permanece como `null` porque el evento local representa un acumulado de sesión, no necesariamente todo el consumo del día.
+El panel **Diagnóstico de consumo** separa:
 
-## Diferencia entre consumo y límites
+- **Hilo acumulado:** todos los tokens declarados durante la vida completa del hilo.
+- **Última petición:** tokens declarados para la última interacción con el modelo.
+- **Contexto estimado:** porcentaje calculado a partir de los tokens de entrada de la última petición y la ventana máxima.
+- **Cuota:** porcentaje oficial consumido y fecha de reinicio.
 
-El adaptador busca dos eventos independientes:
+El contexto es una estimación y aparece identificado como tal. El acumulado del hilo no se denomina contexto ni consumo diario.
 
-1. El evento `token_count` más reciente para obtener el consumo de la sesión.
-2. El evento más reciente que contenga ventanas `primary` o `secondary` completas.
+`tokens_today` permanece como `null` porque el JSONL no permite asegurar qué parte del acumulado pertenece al día actual.
 
-Esto evita perder los últimos límites válidos cuando un evento posterior, por ejemplo de tipo `premium`, incluye créditos pero deja las ventanas en `null`.
+## Lectura incremental
 
-Cuando los límites tienen más de treinta minutos, se marcan como antiguos. Siguen siendo datos reales, pero el visor solicita ejecutar una nueva tarea en Codex para refrescarlos.
+Cada archivo mantiene un cursor en memoria con:
+
+- Identificador del archivo.
+- Tamaño y fecha de modificación.
+- Último byte procesado.
+- Fragmento pendiente de una línea incompleta.
+- Estado agregado de la sesión.
+
+Después del primer análisis solo se leen los bytes añadidos. Si el archivo se trunca, se sustituye o rota, el estado se reconstruye desde el principio. La actividad se limita a doce elementos y las líneas JSON excesivamente grandes se omiten para proteger la memoria.
+
+## Máquina de estados
+
+- `task_started` activa `working`.
+- Una herramienta sin resultado mantiene `working` con `status_reason: tool_running`.
+- `task_complete` sin error produce `completed`.
+- `task_complete.error.codex_error_info: usage_limit_exceeded` produce `waiting`.
+- Un fallo explícito de tarea o herramienta produce `error`.
+- `idle` solo se utiliza cuando no existe tarea activa, bloqueo ni fallo.
+- `offline` indica que la carpeta local de sesiones no está disponible o que Codex no puede detectarse sin sesiones.
+
+## Seguridad
+
+Antes de publicar texto se eliminan o sustituyen:
+
+- Rutas absolutas de Windows, Linux o macOS.
+- Correos electrónicos.
+- URLs.
+- Tokens con formato `sk-*`.
+- Valores asociados a claves, contraseñas y secretos.
+- Marcado interno y prompts extensos.
+
+El visor muestra un máximo acotado de texto por tarea y actividad. No procesa ni publica contenido de razonamiento.
 
 ## Ejecución recomendada con WAMP
 
-Abre PowerShell en la raíz del repositorio y cambia a la rama de la prueba:
-
-```powershell
-git fetch origin
-git switch feature/real-codex-usage-preview
-git pull
-```
-
-Ejecuta:
+Desde la raíz del repositorio:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -73,17 +90,15 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 El script:
 
-1. Crea `service\.venv` con Python 3.11 cuando no existe.
+1. Prepara `service\.venv` con Python 3.11 o superior.
 2. Instala el servicio en modo editable.
 3. Copia el visor a `C:\wamp64\www\agent-control-hub`.
-4. Genera y actualiza `snapshot.json` cada cinco segundos.
+4. Actualiza `snapshot.json` cada cinco segundos.
 5. Abre `http://localhost/agent-control-hub/`.
 
 Detén el proceso mediante `Ctrl+C`.
 
 ## Captura única
-
-Para generar una sola instantánea:
 
 ```powershell
 .\scripts\run-codex-preview.ps1 -Once
@@ -110,31 +125,12 @@ py -3.11 -m venv .venv
     --output .\snapshot.json
 ```
 
-El archivo puede abrirse con cualquier editor o formatearse en PowerShell:
+El JSON puede revisarse en PowerShell:
 
 ```powershell
 Get-Content .\snapshot.json |
     ConvertFrom-Json |
-    ConvertTo-Json -Depth 20
+    ConvertTo-Json -Depth 30
 ```
 
-## Interpretación de estados
-
-- `status: idle`: se han encontrado datos o la CLI de Codex está instalada, pero el servicio todavía no determina si existe una tarea activa.
-- `status: offline`: no se encontraron sesiones ni el comando `codex` en el sistema.
-- `token_usage: null`: no existe todavía un evento `token_count` legible.
-- `rate_limits: null`: no existe ningún evento con ventanas de cuota completas.
-- `rate_limits.is_stale: true`: el límite es real, pero no ha sido actualizado recientemente.
-
-## Seguridad
-
-El JSON publicado no contiene:
-
-- Prompts.
-- Respuestas.
-- Código de los proyectos.
-- Tokens de autenticación.
-- Cookies.
-- La ruta absoluta del perfil de Windows.
-
-WAMP debe mantenerse limitado al equipo o a una red de confianza. No se debe publicar la carpeta del visor directamente en Internet.
+WAMP debe permanecer limitado al equipo o a una red de confianza. La carpeta del visor no debe publicarse directamente en Internet.
