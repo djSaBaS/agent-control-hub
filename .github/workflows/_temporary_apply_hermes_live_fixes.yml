@@ -1,9 +1,13 @@
 name: "Temporal · Aplicar correcciones Hermes en vivo"
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/hermes-live-and-snapshot-lock
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
