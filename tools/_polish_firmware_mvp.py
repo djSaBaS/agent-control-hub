@@ -20,6 +20,24 @@ def replace_once(path: Path, old: str, new: str) -> None:
     path.write_text(content.replace(old, new, 1), encoding="utf-8")
 
 
+# Sustituye un número exacto de apariciones previamente conocido.
+def replace_expected(path: Path, old: str, new: str, expected: int) -> None:
+    """Permite actualizar bloques repetidos sin aceptar coincidencias imprevistas."""
+
+    # Lee el archivo completo con codificación estable.
+    content = path.read_text(encoding="utf-8")
+    # Cuenta las apariciones que se sustituirán.
+    occurrences = content.count(old)
+    # Rechaza una revisión diferente de la esperada.
+    if occurrences != expected:
+        # Explica el número real de coincidencias.
+        raise RuntimeError(
+            f"Número inesperado de anclas en {path}: {occurrences}; esperado: {expected}"
+        )
+    # Sustituye todas las apariciones validadas.
+    path.write_text(content.replace(old, new), encoding="utf-8")
+
+
 # Resuelve la raíz del repositorio desde la ubicación del script.
 root = Path(__file__).resolve().parents[1]
 # Resuelve el receptor principal del firmware.
@@ -47,14 +65,16 @@ replace_once(
     '    drawFooter("A: Anterior", "B: Actividad", "C: Siguiente");\n',
 )
 
-# Corrige el pie de la vista Actividad para reflejar el ciclo de pantallas.
-replace_once(
+# Corrige ambos pies de Actividad, incluido el estado vacío.
+replace_expected(
     # Modifica únicamente la interfaz.
     ui_path,
-    # Localiza el pie anterior de Actividad.
+    # Localiza los dos pies anteriores de Actividad.
     '    drawFooter("A: Detalle", "B: Resumen", "C: Siguiente");\n',
     # Publica la navegación real de la acción central.
     '    drawFooter("A: Anterior", "B: Sistema", "C: Siguiente");\n',
+    # Exige exactamente una vista vacía y una vista con datos.
+    expected=2,
 )
 
 # Corrige el pie de la vista Sistema para reflejar selección y regreso.
