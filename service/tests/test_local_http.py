@@ -1,13 +1,16 @@
 """Pruebas del servidor HTTP restringido a loopback."""
 
-# Importa HTTPConnection para probar el servidor sin dependencias externas.
-from http.client import HTTPConnection, HTTPResponse
 # Importa threading para ejecutar el servidor durante cada prueba.
 import threading
+# Importa HTTPConnection para probar el servidor sin dependencias externas.
+from http.client import HTTPConnection, HTTPResponse
 # Importa Path para tipar la carpeta temporal de pytest.
 from pathlib import Path
 # Importa cast para concretar el tipo de server_address.
 from typing import cast
+
+# Importa pytest para comprobar errores de configuración explícitos.
+import pytest
 
 # Importa la factoría pública sometida a prueba.
 from agent_control_hub.local_http import create_server
@@ -115,14 +118,6 @@ def test_local_http_rejects_missing_directory(tmp_path: Path) -> None:
     missing_directory = tmp_path / "missing"
 
     # Comprueba el error de configuración esperado.
-    try:
+    with pytest.raises(ValueError, match="No existe la carpeta pública"):
         # Intenta crear el servidor sobre una ruta inexistente.
         create_server(missing_directory, 0)
-    # Captura únicamente el error de configuración documentado.
-    except ValueError as error:
-        # Confirma que el diagnóstico identifica la carpeta ausente.
-        assert "No existe la carpeta pública" in str(error)
-    # Falla expresamente si la factoría aceptó una ruta inexistente.
-    else:
-        # Informa de una regresión en la validación previa.
-        raise AssertionError("El servidor aceptó una carpeta inexistente.")
