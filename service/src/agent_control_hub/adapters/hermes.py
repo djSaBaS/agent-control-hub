@@ -4,35 +4,46 @@ from __future__ import annotations
 
 # Importa utilidades asíncronas para no bloquear el servicio principal.
 import asyncio
+
 # Importa JSON para interpretar configuración de modelo y llamadas a herramientas.
 import json
+
 # Importa variables de entorno para localizar HERMES_HOME de forma portable.
 import os
+
 # Importa expresiones regulares para sanitizar contenido antes de publicarlo.
 import re
+
 # Importa resolución de ejecutables para consultar el estado del gateway.
 import shutil
+
 # Importa el cliente SQLite incluido en Python.
 import sqlite3
+
 # Importa procesos controlados para ejecutar únicamente comandos locales conocidos.
 import subprocess
+
 # Importa tipos de funciones para permitir pruebas deterministas.
 from collections.abc import Callable
+
 # Importa estructuras de datos inmutables para filas normalizadas.
 from dataclasses import dataclass
+
 # Importa fechas UTC para comparar actividad y construir el contrato público.
 from datetime import UTC, datetime, timedelta
+
 # Importa rutas seguras y compatibles con Windows.
 from pathlib import Path
+
 # Importa constantes tipadas para cumplir el análisis estricto.
 from typing import Final
 
 # Importa el contrato común de adaptadores.
 from agent_control_hub.adapters.base import PlatformAdapter
+
 # Importa los modelos normalizados que consumen el dashboard y el dispositivo.
 from agent_control_hub.models import (
     ActivityItem,
-    AgentSnapshot,
     AgentState,
     PlatformRuntimeInfo,
     PlatformSnapshot,
@@ -594,7 +605,11 @@ def _derive_status(
     # Mantiene completado durante cinco minutos tras una respuesta final.
     if latest.role == "assistant" and latest.finish_reason == "stop":
         if now - latest.timestamp <= timedelta(minutes=5):
-            return AgentState.COMPLETED, "response_complete", "La última respuesta terminó correctamente."
+            return (
+                AgentState.COMPLETED,
+                "response_complete",
+                "La última respuesta terminó correctamente.",
+            )
         # Tras el periodo reciente, la sesión continúa disponible pero inactiva.
         return AgentState.IDLE, "session_idle", "Hermes está preparado para una nueva solicitud."
     # Evita inventar trabajo cuando el formato no es concluyente.
@@ -743,9 +758,8 @@ class HermesAdapter(PlatformAdapter):
         """Evita ejecutar hermes gateway status cada cinco segundos."""
 
         # Comprueba si la caché sigue vigente.
-        if (
-            self._gateway_checked_at is not None
-            and now - self._gateway_checked_at < timedelta(seconds=_GATEWAY_CACHE_SECONDS)
+        if self._gateway_checked_at is not None and now - self._gateway_checked_at < timedelta(
+            seconds=_GATEWAY_CACHE_SECONDS
         ):
             return self._gateway_status
         # Ejecuta la sonda controlada.
@@ -830,7 +844,8 @@ class HermesAdapter(PlatformAdapter):
         usage = _build_usage(session, context_window)
         # Construye la tarea visible con título real de Hermes.
         task = TaskInfo(
-            display_name=session.title or (latest_user.content if latest_user is not None else None),
+            display_name=session.title
+            or (latest_user.content if latest_user is not None else None),
             conversation_name=session.title,
             objective=latest_user.content if latest_user is not None else None,
             status=status,
