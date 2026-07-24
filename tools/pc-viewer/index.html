@@ -284,8 +284,11 @@
     }
 
     function latestResult(platform) {
+      if (platform.task?.last_result) {
+        return ['Resultado técnico', platform.task.last_result];
+      }
       const result = platform.recent_activity?.find(item =>
-        ['completed', 'error', 'waiting'].includes(item.status)
+        ['completed', 'error'].includes(item.status) && item.activity_type !== 'limit'
       );
       if (!result) return ['No disponible', null];
       return [result.label, result.summary ?? formatDate(result.timestamp)];
@@ -320,14 +323,25 @@
           platform.project?.cwd_alias ? `Ruta sanitizada: ${platform.project.cwd_alias}` : null
         ),
         section(
-          'Tarea',
-          platform.task?.display_name,
-          platform.task?.activity ?? null
+          'Conversación',
+          platform.task?.conversation_name ?? platform.task?.display_name
+        ),
+        section(
+          'Objetivo',
+          platform.task?.objective ?? platform.task?.display_name
+        ),
+        section(
+          'Actividad actual',
+          platform.task?.activity ?? statusLabels[platform.status] ?? platform.status
         ),
         section(
           'Último resultado',
           result[0],
           result[1]
+        ),
+        section(
+          'Pendiente',
+          platform.task?.pending
         ),
         section(
           'Sesión',
@@ -363,7 +377,10 @@
           const ages = stale
             .map(item => ageMinutes(item.rate_limits.updated_at))
             .filter(value => value != null);
-          warning.textContent = `Las cuotas son reales, pero su última actualización tiene ${Math.max(...ages)} minutos. Una nueva actividad de Codex debería refrescarlas.`;
+          const blocked = stale.find(item => item.status_reason === 'usage_limit_exceeded');
+          warning.textContent = blocked
+            ? `Cuota agotada. Último dato recibido hace ${Math.max(...ages)} minutos. Reinicio previsto: ${formatDate(blocked.next_reset_at)}.`
+            : `Las cuotas son reales, pero su última actualización tiene ${Math.max(...ages)} minutos.`;
           warning.className = 'notice visible';
         } else {
           warning.className = 'notice';

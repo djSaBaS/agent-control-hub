@@ -14,6 +14,19 @@ from pathlib import Path
 from typing import Final
 
 from agent_control_hub.adapters.base import PlatformAdapter
+from agent_control_hub.adapters.codex_task_metadata import (
+    derive_objective_title,
+    extract_conversation_title,
+    extract_objective_block,
+    extract_pending_from_message,
+    extract_result_from_message,
+    extract_tool_arguments,
+    extract_tool_objective,
+    is_internal_task_text,
+    is_meaningful_result,
+    normalize_goal_objective,
+    raw_message_text,
+)
 from agent_control_hub.models import (
     ActivityItem,
     AgentState,
@@ -66,7 +79,11 @@ class _SessionAccumulator:
     latest_rate_limits: _TokenEvent | None = None
     latest_user_message: str | None = None
     latest_goal: str | None = None
+    conversation_name: str | None = None
+    objective: str | None = None
     latest_agent_message: str | None = None
+    last_result: str | None = None
+    pending: str | None = None
     task_started_at: datetime | None = None
     task_last_activity_at: datetime | None = None
     task_active: bool = False
@@ -160,6 +177,11 @@ def _sanitize_text(value: object, max_length: int = _MAX_VISIBLE_TEXT) -> str | 
     sanitized = re.sub(r"<[^>]+>", " ", value)
     sanitized = re.sub(r"https?://\S+", "[url]", sanitized, flags=re.IGNORECASE)
     sanitized = re.sub(
+        r"(?i)\b[A-Z]:\\[^\r\n<>|?*]+?\.(?:php|txt|md|jsonl?|log|csv|xlsx?|docx?|pdf|py|js|ts|c|cpp|h)\b",
+        "[ruta]",
+        sanitized,
+    )
+    sanitized = re.sub(
         r"[A-Za-z]:\\[^\s\"']+",
         "[ruta]",
         sanitized,
@@ -211,7 +233,9 @@ def _is_technical_objective(value: str) -> bool:
     """Descarta objetivos internos que no describen el trabajo del usuario."""
 
     lowered = value.casefold()
-    return any(marker in lowered for marker in _TECHNICAL_OBJECTIVE_MARKERS)
+    return is_internal_task_text(value) or any(
+        marker in lowered for marker in _TECHNICAL_OBJECTIVE_MARKERS
+    )
 
 
 def _extract_message_text(payload: dict[str, object]) -> str | None:
@@ -305,6 +329,14 @@ def _output_summary(output: object) -> str | None:
     if coverage is not None:
         covered, total = coverage.groups()
         return f"Cobertura Playwright: {covered}/{total}"
+    reverse_coverage = re.search(
+        r'"discoveredTotal"\s*:\s*(\d+).*?"playwrightExactCovered"\s*:\s*(\d+)',
+        output,
+        flags=re.DOTALL,
+    )
+    if reverse_coverage is not None:
+        total, covered = reverse_coverage.groups()
+        return f"Cobertura Playwright: {covered}/{total}"
     exit_code = re.search(r"Exit code:\s*(\d+)", output, flags=re.IGNORECASE)
     wall_time = re.search(r"Wall time:\s*([^\r\n]+)", output, flags=re.IGNORECASE)
     if exit_code is not None:
@@ -370,6 +402,9 @@ def _consume_session_meta(
     state.source = _optional_text(payload.get("source"), 80)
     state.cli_version = _optional_text(payload.get("cli_version"), 40)
     state.model_provider = _optional_text(payload.get("model_provider"), 80)
+    conversation_name = _sanitize_text(extract_conversation_title(payload), 120)
+    if conversation_name is not None:
+        state.conversation_name = conversation_name
     if project is not None:
         state.project_name, state.cwd_alias = project
 
@@ -418,14 +453,27 @@ def _consume_task_complete(
     """Cierra una tarea distinguiendo éxito, fallo y límite agotado."""
 
     error = _as_object_dict(payload.get("error"))
-    last_message = _sanitize_text(payload.get("last_agent_message"), 180)
-    if last_message is not None:
+    raw_last_message = payload.get("last_agent_message")
+    last_message = _sanitize_text(raw_last_message, 180)
+    objective = _sanitize_text(extract_objective_block(raw_last_message), 500)
+    result = _sanitize_text(extract_result_from_message(raw_last_message), 220)
+    pending = _sanitize_text(extract_pending_from_message(raw_last_message), 220)
+    if last_message is not None and not is_internal_task_text(raw_last_message):
         state.latest_agent_message = last_message
+    if objective is not None:
+        state.objective = objective
+        state.latest_goal = _sanitize_text(derive_objective_title(objective), 180)
+    if result is not None:
+        state.last_result = result
+    if pending is not None:
+        state.pending = pending
     state.task_active = False
     state.pending_tools.clear()
     if error is None:
         state.task_completed = True
         state.error_message = None
+        if state.last_result is None and last_message is not None:
+            state.last_result = last_message
         _add_activity(
             state,
             "task",
@@ -482,13 +530,31 @@ def _consume_event_message(
         return
     if event_type == "thread_goal_updated":
         goal = _as_object_dict(payload.get("goal"))
-        objective = _sanitize_text(goal.get("objective"), 180) if goal is not None else None
+        raw_objective = goal.get("objective") if goal is not None else None
+        objective = _sanitize_text(normalize_goal_objective(raw_objective), 500)
         if objective is not None and not _is_technical_objective(objective):
-            state.latest_goal = objective
+            state.objective = objective
+            state.latest_goal = _sanitize_text(derive_objective_title(objective), 180)
+        return
+    if event_type in {"thread_title_updated", "thread_name_updated"}:
+        conversation_name = _sanitize_text(extract_conversation_title(payload), 120)
+        if conversation_name is not None:
+            state.conversation_name = conversation_name
         return
     if event_type == "agent_message":
-        message = _sanitize_text(payload.get("message"), 180)
-        if message is not None:
+        raw_message = payload.get("message")
+        message = _sanitize_text(raw_message, 180)
+        objective = _sanitize_text(extract_objective_block(raw_message), 500)
+        result = _sanitize_text(extract_result_from_message(raw_message), 220)
+        pending = _sanitize_text(extract_pending_from_message(raw_message), 220)
+        if objective is not None:
+            state.objective = objective
+            state.latest_goal = _sanitize_text(derive_objective_title(objective), 180)
+        if result is not None:
+            state.last_result = result
+        if pending is not None:
+            state.pending = pending
+        if message is not None and not is_internal_task_text(raw_message):
             state.latest_agent_message = message
             _add_activity(
                 state,
@@ -530,6 +596,16 @@ def _consume_tool_call(
     """Registra una herramienta pendiente sin exponer argumentos completos."""
 
     name = _optional_text(payload.get("name"), 80) or "herramienta"
+    arguments = extract_tool_arguments(payload)
+    if arguments is not None:
+        conversation_name = _sanitize_text(extract_conversation_title(arguments), 120)
+        if conversation_name is not None:
+            state.conversation_name = conversation_name
+    if name.casefold() in {"create_goal", "update_goal"}:
+        objective = _sanitize_text(extract_tool_objective(payload), 500)
+        if objective is not None:
+            state.objective = objective
+            state.latest_goal = _sanitize_text(derive_objective_title(objective), 180)
     call_id = _optional_text(payload.get("call_id", payload.get("id")), 160)
     if call_id is not None:
         state.pending_tools[call_id] = name
@@ -563,6 +639,8 @@ def _consume_tool_output(
     if name != "herramienta":
         label = f"{label}: {name[:60]}"
     summary = _output_summary(output)
+    if not failed and is_meaningful_result(summary):
+        state.last_result = summary
     if failed:
         state.error_message = summary or "Una herramienta devolvió un error."
     _add_activity(state, "tool_result", label, status, timestamp, summary)
@@ -579,9 +657,15 @@ def _consume_response_item(
     if item_type == "message":
         role = payload.get("role")
         if role == "user":
-            message = _extract_message_text(payload)
-            if message is not None:
-                state.latest_user_message = message
+            raw_message = raw_message_text(payload)
+            objective = _sanitize_text(extract_objective_block(raw_message), 500)
+            if objective is not None:
+                state.objective = objective
+                state.latest_goal = _sanitize_text(derive_objective_title(objective), 180)
+            if raw_message is not None and not is_internal_task_text(raw_message):
+                message = _sanitize_text(raw_message, 180)
+                if message is not None:
+                    state.latest_user_message = message
         return
     if item_type in {"function_call", "custom_tool_call"}:
         _consume_tool_call(state, payload, timestamp)
@@ -911,6 +995,10 @@ def _build_project(state: _SessionAccumulator) -> ProjectInfo | None:
 def _task_display_name(state: _SessionAccumulator) -> str | None:
     """Prioriza petición del usuario, objetivo útil y actualización del agente."""
 
+    if state.conversation_name is not None:
+        return state.conversation_name
+    if state.objective is not None:
+        return _sanitize_text(derive_objective_title(state.objective), 180)
     return state.latest_user_message or state.latest_goal or state.latest_agent_message
 
 
@@ -939,8 +1027,12 @@ def _build_task(state: _SessionAccumulator, status: AgentState) -> TaskInfo | No
         return None
     return TaskInfo(
         display_name=display_name,
+        conversation_name=state.conversation_name,
+        objective=state.objective,
         status=status,
         activity=activity,
+        last_result=state.last_result,
+        pending=state.pending,
         started_at=state.task_started_at,
         last_activity_at=state.task_last_activity_at,
     )
