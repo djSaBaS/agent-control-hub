@@ -413,7 +413,7 @@ static void drawPlatformDetail(const DeviceViewModel& model) {
     // Escribe la fecha oficial acotada.
     M5.Display.print(compactText(platform->nextReset.isEmpty() ? "Reinicio --" : platform->nextReset, 31U));
     // Dibuja el pie de navegación del detalle.
-    drawFooter("A: Resumen", "B: Actividad", "C: Siguiente");
+    drawFooter("A: Anterior", "B: Actividad", "C: Siguiente");
 }
 
 // Dibuja la actividad reciente de la plataforma seleccionada.
@@ -429,7 +429,7 @@ static void drawActivity(const DeviceViewModel& model) {
         // Dibuja el mensaje centrado de forma aproximada.
         drawWrappedText("No hay actividad reciente disponible para esta plataforma.", 24, 80, 42U, 3U, COLOR_MUTED, COLOR_CARD);
         // Dibuja el pie de navegación.
-        drawFooter("A: Detalle", "B: Resumen", "C: Siguiente");
+        drawFooter("A: Anterior", "B: Sistema", "C: Siguiente");
         // Finaliza la vista vacía.
         return;
     }
@@ -455,7 +455,7 @@ static void drawActivity(const DeviceViewModel& model) {
         drawWrappedText(activity.summary, 34, y + 24, 42U, 2U, COLOR_MUTED, COLOR_CARD);
     }
     // Dibuja el pie de navegación de actividad.
-    drawFooter("A: Detalle", "B: Resumen", "C: Siguiente");
+    drawFooter("A: Anterior", "B: Sistema", "C: Siguiente");
 }
 
 // Dibuja diagnóstico de conexión y protocolo.
@@ -497,7 +497,7 @@ static void drawSystem(const DeviceViewModel& model) {
     // Escribe la versión funcional del MVP.
     M5.Display.print("Firmware MVP multiplaforma · protocolo 1.0");
     // Dibuja el pie de navegación de sistema.
-    drawFooter("A: Resumen", "B: Detalle", "C: Resumen");
+    drawFooter("A: Anterior", "B: Resumen", "C: Siguiente");
 }
 
 // Dibuja una alerta operativa retenida por el servicio.

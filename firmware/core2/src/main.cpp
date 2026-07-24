@@ -268,7 +268,7 @@ static bool applySnapshot(const JsonDocument& document) {
     // Recupera la versión declarada del protocolo.
     const char* protocolVersion = document["protocol_version"] | "";
     // Acepta únicamente versiones compatibles con la rama 1.x.
-    if (protocolVersion[0] != '1' || protocolVersion[1] != '.') {
+    if (std::strlen(protocolVersion) < 2U || protocolVersion[0] != '1' || protocolVersion[1] != '.') {
         // Publica un diagnóstico no sensible.
         viewModel.protocolMessage = "Version de protocolo no compatible";
         // Rechaza el snapshot recibido.
