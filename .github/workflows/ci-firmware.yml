@@ -64,7 +64,7 @@ jobs:
 
       # Conserva paquetes y toolchains descargados por PlatformIO.
       - name: "3 · Restaurar caché de PlatformIO"
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.platformio/.cache
