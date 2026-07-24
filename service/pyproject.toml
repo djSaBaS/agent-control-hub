@@ -23,7 +23,7 @@ dev = [
   "pytest>=8.2,<9",
   "pytest-cov>=6,<8",
   "ruff>=0.5,<1",
-  "types-pyserial>=3.5,<4"
+  "types-pyserial>=3.5.0.20260712,<4"
 ]
 
 [project.scripts]
