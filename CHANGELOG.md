@@ -26,6 +26,10 @@
 - Conversación, objetivo, actividad actual, último resultado y pendiente separados en el modelo de tarea.
 - Envoltorios `codex_internal_context` y plantillas internas descartados antes de generar títulos visibles.
 - Objetivos reales extraídos desde `<objective>`, `thread_goal_updated` y herramientas `create_goal`.
+- Adaptador local de Hermes Agent mediante `state.db` en modo estrictamente de solo lectura.
+- Sesión, título, modelo, proveedor, proyecto, tokens, costes y actividad reciente de Hermes normalizados.
+- Estado de gateway, sesiones, mensajes, herramientas, llamadas API y trabajos cron visibles en el panel.
+- Codex y Hermes habilitados conjuntamente en la vista local sin modificar el firmware.
 
 ## 0.1.0 - 2026-07-22
 
