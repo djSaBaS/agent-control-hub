@@ -123,7 +123,7 @@ jobs:
       - name: "3 · Revisar dependencias modificadas"
         id: dependency_review
         if: steps.dependency_graph.outputs.enabled == 'true'
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: moderate
           comment-summary-in-pr: always
