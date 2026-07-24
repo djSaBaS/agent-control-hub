@@ -220,9 +220,7 @@ def extract_result_from_message(value: object) -> str | None:
         if line is None:
             continue
         lowered = line.casefold()
-        if re.search(r"\b\d+\s*/\s*\d+\b", line) and any(
-            hint in lowered for hint in _RESULT_HINTS
-        ):
+        if re.search(r"\b\d+\s*/\s*\d+\b", line) and any(hint in lowered for hint in _RESULT_HINTS):
             return line
     labelled = _RESULT_LABEL_PATTERN.search(value)
     if labelled is not None:

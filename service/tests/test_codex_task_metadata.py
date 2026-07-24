@@ -112,9 +112,7 @@ def test_goal_without_xml_tags_removes_internal_continuation_preamble() -> None:
     normalized = normalize_goal_objective(raw_goal)
 
     # Conserva exclusivamente la parte funcional del objetivo.
-    assert normalized == (
-        "Auditar técnicamente la aplicación Prometeo antes de producción."
-    )
+    assert normalized == ("Auditar técnicamente la aplicación Prometeo antes de producción.")
 
 
 def test_pending_extraction_accepts_unique_operational_pending_phrase() -> None:
@@ -131,9 +129,7 @@ def test_pending_extraction_accepts_unique_operational_pending_phrase() -> None:
     pending = extract_pending_from_message(message)
 
     # Verifica que el texto operativo se conserva completo.
-    assert pending == (
-        "el fichero físico temporal no se ha podido borrar por límite de uso."
-    )
+    assert pending == ("el fichero físico temporal no se ha podido borrar por límite de uso.")
 
 
 def test_result_extraction_prefers_first_completed_item_over_full_report() -> None:
