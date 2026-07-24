@@ -3,9 +3,8 @@
 # Importa fechas conscientes de zona horaria.
 from datetime import UTC, datetime, timedelta
 
-# Importa el contrato común de adaptadores.
+# Importa el contrato común y los modelos normalizados del servicio.
 from agent_control_hub.adapters.base import PlatformAdapter
-# Importa los modelos normalizados del servicio.
 from agent_control_hub.models import AgentSnapshot, AgentState, PlatformSnapshot
 
 

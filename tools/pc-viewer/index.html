@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Control Hub · Telemetría operativa</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0a0f16;
+      color: #edf2f7;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0a0f16; }
+    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 48px; }
+    header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 22px; }
+    h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.5rem); letter-spacing: 0; }
+    h2, h3 { letter-spacing: 0; }
+    .subtitle { margin-top: 7px; color: #94a3b8; }
+    .connection { padding: 8px 12px; border: 1px solid #334155; border-radius: 6px; background: #111827; white-space: nowrap; }
+    .connection.ok { border-color: #167f5b; }
+    .connection.error { border-color: #b83b45; }
+    .notice { display: none; margin-bottom: 18px; padding: 13px 15px; border: 1px solid #8b6c20; border-radius: 6px; background: #2f2714; color: #fde7a4; }
+    .notice.visible { display: block; }
+    .platform { margin-bottom: 18px; border: 1px solid #263244; border-radius: 8px; background: #111827; overflow: hidden; }
+    .platform-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px 22px; border-bottom: 1px solid #263244; }
+    .platform-title { margin: 0; font-size: 1.35rem; }
+    .platform-message { margin: 6px 0 0; color: #aeb9c8; }
+    .badge { padding: 6px 10px; border: 1px solid currentColor; border-radius: 999px; font-size: .78rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+    .badge.idle { color: #94a3b8; }
+    .badge.working { color: #55c2ff; }
+    .badge.waiting { color: #f6c453; }
+    .badge.completed { color: #65d6a6; }
+    .badge.error { color: #ff7b86; }
+    .badge.offline { color: #a8b0bd; }
+    .overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .section { padding: 20px 22px; border-bottom: 1px solid #263244; }
+    .section:nth-child(odd) { border-right: 1px solid #263244; }
+    .section h3 { margin: 0 0 14px; font-size: .86rem; color: #8fa0b5; text-transform: uppercase; }
+    .primary-value { margin: 0 0 8px; font-size: 1.2rem; font-weight: 700; overflow-wrap: anywhere; }
+    .secondary-value { margin: 0; color: #aeb9c8; overflow-wrap: anywhere; }
+    .metric { display: flex; justify-content: space-between; gap: 18px; padding: 8px 0; border-bottom: 1px solid #222d3d; }
+    .metric:last-child { border-bottom: 0; }
+    .metric span:first-child { color: #94a3b8; }
+    .metric strong { text-align: right; overflow-wrap: anywhere; }
+    .limits { padding: 20px 22px; border-bottom: 1px solid #263244; }
+    .limits-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 22px; }
+    .limit h3 { margin: 0 0 10px; font-size: .95rem; }
+    .limit-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+    .bar { height: 9px; background: #263244; border-radius: 999px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: #38a9dc; border-radius: inherit; }
+    .activity { padding: 20px 22px; border-bottom: 1px solid #263244; }
+    .activity h3 { margin: 0 0 14px; font-size: .86rem; color: #8fa0b5; text-transform: uppercase; }
+    .activity-list { display: grid; gap: 8px; }
+    .activity-item { display: grid; grid-template-columns: 155px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid #222d3d; }
+    .activity-item:last-child { border-bottom: 0; }
+    .activity-label { font-weight: 650; }
+    .activity-summary { color: #aeb9c8; overflow-wrap: anywhere; }
+    .activity-time { color: #7f8da1; font-size: .84rem; white-space: nowrap; }
+    .diagnostics { padding: 0 22px 20px; }
+    .diagnostics summary { cursor: pointer; padding: 18px 0; color: #c5cfdb; font-weight: 650; }
+    .source { margin-top: 12px; color: #7f8da1; font-size: .84rem; overflow-wrap: anywhere; }
+    .empty { color: #94a3b8; }
+    .raw { margin-top: 20px; }
+    .raw summary { cursor: pointer; color: #aeb9c8; }
+    pre { max-height: 360px; overflow: auto; padding: 16px; border: 1px solid #263244; border-radius: 6px; background: #070b10; font-size: .8rem; }
+    footer { margin-top: 22px; color: #738094; font-size: .85rem; }
+    @media (max-width: 760px) {
+      header, .platform-header { align-items: stretch; flex-direction: column; }
+      .connection, .badge { white-space: normal; }
+      .overview { grid-template-columns: 1fr; }
+      .section:nth-child(odd) { border-right: 0; }
+      .activity-item { grid-template-columns: 1fr; gap: 4px; }
+      .activity-time { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Agent Control Hub</h1>
+        <div class="subtitle">Vista local de telemetría real y sanitizada</div>
+      </div>
+      <div id="connection" class="connection">Esperando snapshot.json…</div>
+    </header>
+
+    <div id="warning" class="notice"></div>
+    <section id="platforms"></section>
+
+    <details class="raw">
+      <summary>Ver JSON recibido</summary>
+      <pre id="raw-json">Todavía no hay datos.</pre>
+    </details>
+
+    <footer>
+      El visor se actualiza cada cinco segundos. Los valores estimados se identifican de forma explícita y los campos nulos no se sustituyen por datos simulados.
+    </footer>
+  </main>
+
+  <script>
+    const connection = document.getElementById('connection');
+    const warning = document.getElementById('warning');
+    const platforms = document.getElementById('platforms');
+    const rawJson = document.getElementById('raw-json');
+
+    const statusLabels = {
+      idle: 'Inactivo',
+      working: 'Trabajando',
+      waiting: 'En espera',
+      completed: 'Completado',
+      error: 'Error',
+      offline: 'Sin conexión'
+    };
+
+    const formatNumber = value => value == null
+      ? 'No disponible'
+      : new Intl.NumberFormat('es-ES').format(value);
+    const formatPercent = value => value == null
+      ? 'No disponible'
+      : `${new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(value)} %`;
+    const formatDate = value => value
+      ? new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(value))
+      : 'No disponible';
+    const formatDuration = minutes => {
+      if (minutes == null) return 'No disponible';
+      if (minutes % 1440 === 0) return `${minutes / 1440} días`;
+      if (minutes % 60 === 0) return `${minutes / 60} horas`;
+      return `${minutes} minutos`;
+    };
+    const ageMinutes = value => value
+      ? Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000))
+      : null;
+
+    function metric(label, value) {
+      const row = document.createElement('div');
+      row.className = 'metric';
+      const name = document.createElement('span');
+      name.textContent = label;
+      const data = document.createElement('strong');
+      data.textContent = value;
+      row.append(name, data);
+      return row;
+    }
+
+    function section(title, primary, secondary = null) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'section';
+      const heading = document.createElement('h3');
+      heading.textContent = title;
+      const primaryValue = document.createElement('p');
+      primaryValue.className = 'primary-value';
+      primaryValue.textContent = primary ?? 'No disponible';
+      wrapper.append(heading, primaryValue);
+      if (secondary) {
+        const secondaryValue = document.createElement('p');
+        secondaryValue.className = 'secondary-value';
+        secondaryValue.textContent = secondary;
+        wrapper.append(secondaryValue);
+      }
+      return wrapper;
+    }
+
+    function renderLimit(title, item) {
+      if (!item) return null;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'limit';
+      const heading = document.createElement('h3');
+      heading.textContent = title;
+      const head = document.createElement('div');
+      head.className = 'limit-head';
+      const used = document.createElement('strong');
+      used.textContent = `${item.used_percent}% usado`;
+      const remaining = document.createElement('span');
+      remaining.textContent = `${item.remaining_percent}% restante`;
+      head.append(used, remaining);
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      const fill = document.createElement('span');
+      fill.style.width = `${Math.min(100, Math.max(0, item.used_percent))}%`;
+      bar.append(fill);
+      wrapper.append(
+        heading,
+        head,
+        bar,
+        metric('Duración', formatDuration(item.window_minutes)),
+        metric('Reinicio', formatDate(item.resets_at))
+      );
+      return wrapper;
+    }
+
+    function renderLimits(platform) {
+      const limits = platform.rate_limits;
+      if (!limits) return null;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'limits';
+      const grid = document.createElement('div');
+      grid.className = 'limits-grid';
+      const primary = renderLimit('Cuota principal', limits.primary);
+      const secondary = renderLimit('Cuota secundaria', limits.secondary);
+      if (primary) grid.append(primary);
+      if (secondary) grid.append(secondary);
+      const metadata = document.createElement('div');
+      metadata.append(
+        metric('Plan detectado', limits.plan_type ?? 'No disponible'),
+        metric('Límites actualizados', formatDate(limits.updated_at))
+      );
+      grid.append(metadata);
+      wrapper.append(grid);
+      return wrapper;
+    }
+
+    function renderActivity(items) {
+      if (!items?.length) return null;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'activity';
+      const heading = document.createElement('h3');
+      heading.textContent = 'Actividad reciente';
+      const list = document.createElement('div');
+      list.className = 'activity-list';
+      items.slice(0, 8).forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'activity-item';
+        const label = document.createElement('div');
+        label.className = 'activity-label';
+        label.textContent = item.label;
+        const summary = document.createElement('div');
+        summary.className = 'activity-summary';
+        summary.textContent = item.summary ?? statusLabels[item.status] ?? item.status;
+        const time = document.createElement('div');
+        time.className = 'activity-time';
+        time.textContent = formatDate(item.timestamp);
+        row.append(label, summary, time);
+        list.append(row);
+      });
+      wrapper.append(heading, list);
+      return wrapper;
+    }
+
+    function renderDiagnostics(platform) {
+      const usage = platform.usage;
+      const legacyUsage = platform.token_usage;
+      const threadTotal = usage?.thread_total ?? legacyUsage;
+      const lastRequest = usage?.last_request;
+      if (!threadTotal && !lastRequest) return null;
+      const details = document.createElement('details');
+      details.className = 'diagnostics';
+      const summary = document.createElement('summary');
+      summary.textContent = 'Diagnóstico de consumo';
+      details.append(summary);
+      if (lastRequest) {
+        details.append(
+          metric('Última petición · entrada', formatNumber(lastRequest.input_tokens)),
+          metric('Última petición · caché', formatNumber(lastRequest.cached_input_tokens)),
+          metric('Última petición · salida', formatNumber(lastRequest.output_tokens)),
+          metric('Última petición · razonamiento', formatNumber(lastRequest.reasoning_output_tokens)),
+          metric('Última petición · total', formatNumber(lastRequest.total_tokens))
+        );
+      }
+      if (usage?.context_used_percent_estimated != null) {
+        details.append(
+          metric('Contexto estimado', formatPercent(usage.context_used_percent_estimated)),
+          metric('Tokens estimados en contexto', formatNumber(usage.context_used_tokens_estimated)),
+          metric('Método de estimación', usage.context_estimation_method ?? 'No disponible')
+        );
+      }
+      if (threadTotal) {
+        details.append(
+          metric('Hilo acumulado · entrada', formatNumber(threadTotal.input_tokens)),
+          metric('Hilo acumulado · caché', formatNumber(threadTotal.cached_input_tokens)),
+          metric('Hilo acumulado · salida', formatNumber(threadTotal.output_tokens)),
+          metric('Hilo acumulado · razonamiento', formatNumber(threadTotal.reasoning_output_tokens)),
+          metric('Hilo acumulado · total', formatNumber(threadTotal.total_tokens)),
+          metric('Ventana máxima del modelo', formatNumber(threadTotal.model_context_window)),
+          metric('Último dato de consumo', formatDate(threadTotal.updated_at))
+        );
+        const source = document.createElement('div');
+        source.className = 'source';
+        source.textContent = `Fuente: ${threadTotal.source} · ${threadTotal.source_reference ?? 'sin referencia'}`;
+        details.append(source);
+      }
+      return details;
+    }
+
+    function latestResult(platform) {
+      const result = platform.recent_activity?.find(item =>
+        ['completed', 'error', 'waiting'].includes(item.status)
+      );
+      if (!result) return ['No disponible', null];
+      return [result.label, result.summary ?? formatDate(result.timestamp)];
+    }
+
+    function renderPlatform(platform) {
+      const card = document.createElement('article');
+      card.className = 'platform';
+      const head = document.createElement('div');
+      head.className = 'platform-header';
+      const headingGroup = document.createElement('div');
+      const title = document.createElement('h2');
+      title.className = 'platform-title';
+      title.textContent = platform.display_name;
+      const message = document.createElement('p');
+      message.className = 'platform-message';
+      message.textContent = platform.status_message ?? 'Sin mensaje de estado adicional.';
+      headingGroup.append(title, message);
+      const badge = document.createElement('span');
+      badge.className = `badge ${platform.status}`;
+      badge.textContent = statusLabels[platform.status] ?? platform.status;
+      head.append(headingGroup, badge);
+      card.append(head);
+
+      const result = latestResult(platform);
+      const overview = document.createElement('div');
+      overview.className = 'overview';
+      overview.append(
+        section(
+          'Proyecto',
+          platform.project?.display_name,
+          platform.project?.cwd_alias ? `Ruta sanitizada: ${platform.project.cwd_alias}` : null
+        ),
+        section(
+          'Tarea',
+          platform.task?.display_name,
+          platform.task?.activity ?? null
+        ),
+        section(
+          'Último resultado',
+          result[0],
+          result[1]
+        ),
+        section(
+          'Sesión',
+          platform.session?.originator ?? 'No disponible',
+          platform.session
+            ? `Inicio: ${formatDate(platform.session.started_at)} · Última actividad: ${formatDate(platform.session.last_activity_at)}`
+            : null
+        )
+      );
+      card.append(overview);
+
+      const limits = renderLimits(platform);
+      if (limits) card.append(limits);
+      const activity = renderActivity(platform.recent_activity);
+      if (activity) card.append(activity);
+      const diagnostics = renderDiagnostics(platform);
+      if (diagnostics) card.append(diagnostics);
+      return card;
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch(`snapshot.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        rawJson.textContent = JSON.stringify(snapshot, null, 2);
+        platforms.replaceChildren(...snapshot.platforms.map(renderPlatform));
+        connection.className = 'connection ok';
+        connection.textContent = `Actualizado: ${formatDate(snapshot.generated_at)}`;
+
+        const stale = snapshot.platforms.filter(item => item.rate_limits?.is_stale);
+        if (stale.length) {
+          const ages = stale
+            .map(item => ageMinutes(item.rate_limits.updated_at))
+            .filter(value => value != null);
+          warning.textContent = `Las cuotas son reales, pero su última actualización tiene ${Math.max(...ages)} minutos. Una nueva actividad de Codex debería refrescarlas.`;
+          warning.className = 'notice visible';
+        } else {
+          warning.className = 'notice';
+          warning.textContent = '';
+        }
+      } catch (error) {
+        connection.className = 'connection error';
+        connection.textContent = `Sin datos: ${error.message}`;
+        warning.className = 'notice visible';
+        warning.textContent = 'Comprueba que el servicio está ejecutándose y que snapshot.json existe en esta carpeta.';
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
