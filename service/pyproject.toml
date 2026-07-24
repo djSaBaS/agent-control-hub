@@ -13,7 +13,7 @@ authors = [
   { name = "Juan Antonio Sánchez Plaza" }
 ]
 dependencies = [
-  "pydantic>=2.8,<3",
+  "pydantic>=2.13.4,<3",
   "pyserial>=3.5,<4"
 ]
 
