@@ -1,17 +1,17 @@
-name: "Diagnóstico temporal · Ruff"
+name: "Corrección temporal · Ruff"
 
 on:
   pull_request:
     paths:
-      - "service/**"
+      - "service/src/agent_control_hub/adapters/codex.py"
       - ".github/workflows/diagnostic-ruff.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnostic:
-    name: "Generar corrección Ruff"
+  fix:
+    name: "Aplicar correcciones verificadas"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -20,8 +20,10 @@ jobs:
         shell: bash
 
     steps:
-      - name: "Descargar repositorio"
+      - name: "Descargar rama de trabajo"
         uses: actions/checkout@v6
+        with:
+          ref: feature/codex-telemetria-operativa
 
       - name: "Preparar Python"
         uses: actions/setup-python@v6
@@ -36,17 +38,72 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -e ".[dev]"
 
-      - name: "Aplicar correcciones Ruff en copia de trabajo"
+      - name: "Normalizar tipos del cursor de archivos"
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/agent_control_hub/adapters/codex.py")
+          content = path.read_text(encoding="utf-8")
+          content = content.replace("import json\nimport re", "import json\nimport os\nimport re")
+          content = content.replace("stat_result: object", "stat_result: os.stat_result")
+          content = content.replace(
+              'file_id = getattr(stat_result, "st_ino", None)',
+              "file_id = stat_result.st_ino",
+          )
+          content = content.replace(
+              "file_id=file_id if isinstance(file_id, int) else None,",
+              "file_id=file_id,",
+          )
+          content = content.replace(
+              "cursor.file_id = file_id if isinstance(file_id, int) else None",
+              "cursor.file_id = file_id",
+          )
+          content = content.replace(
+              "    events = [\n"
+              "        cursor.state.latest_usage\n"
+              "        for cursor in file_cache.values()\n"
+              "        if cursor.state.latest_usage is not None\n"
+              "    ]\n",
+              "    events: list[_TokenEvent] = []\n"
+              "    for cursor in file_cache.values():\n"
+              "        event = cursor.state.latest_usage\n"
+              "        if event is not None:\n"
+              "            events.append(event)\n",
+          )
+          content = content.replace(
+              "    events = [\n"
+              "        cursor.state.latest_rate_limits\n"
+              "        for cursor in file_cache.values()\n"
+              "        if cursor.state.latest_rate_limits is not None\n"
+              "    ]\n",
+              "    events: list[_TokenEvent] = []\n"
+              "    for cursor in file_cache.values():\n"
+              "        event = cursor.state.latest_rate_limits\n"
+              "        if event is not None:\n"
+              "            events.append(event)\n",
+          )
+          path.write_text(content, encoding="utf-8")
+          PY
+
+      - name: "Aplicar Ruff y validar archivo"
         run: |
           set -euo pipefail
           python -m ruff check src/agent_control_hub/adapters/codex.py --fix --unsafe-fixes
           python -m ruff format src/agent_control_hub/adapters/codex.py
           python -m ruff check src/agent_control_hub/adapters/codex.py
+          python -m mypy src/agent_control_hub/adapters/codex.py
 
-      - name: "Guardar archivo corregido"
-        uses: actions/upload-artifact@v4
-        with:
-          name: corrected-codex-adapter
-          path: service/src/agent_control_hub/adapters/codex.py
-          if-no-files-found: error
-          retention-days: 1
+      - name: "Publicar corrección en la rama"
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- service/src/agent_control_hub/adapters/codex.py; then
+            echo "No hay cambios pendientes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add service/src/agent_control_hub/adapters/codex.py
+          git commit -m "Corregir calidad y tipado del adaptador Codex"
+          git push origin HEAD:feature/codex-telemetria-operativa
