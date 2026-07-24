@@ -263,6 +263,10 @@ def _extract_message_text(payload: dict[str, object]) -> str | None:
 def _tool_summary(payload: dict[str, object]) -> str | None:
     """Obtiene una descripción acotada de argumentos de una herramienta."""
 
+    tool_name = _optional_text(payload.get("name"), 80)
+    if tool_name is not None and "patch" in tool_name.casefold():
+        return "Parche preparado"
+
     raw_arguments = payload.get("arguments", payload.get("input"))
     if isinstance(raw_arguments, str):
         try:
@@ -472,7 +476,7 @@ def _consume_task_complete(
     if error is None:
         state.task_completed = True
         state.error_message = None
-        if state.last_result is None and last_message is not None:
+        if state.last_result is None and is_meaningful_result(last_message):
             state.last_result = last_message
         _add_activity(
             state,
