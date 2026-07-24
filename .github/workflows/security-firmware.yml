@@ -1,0 +1,105 @@
+# Define el flujo de análisis de seguridad específico del firmware.
+name: "Seguridad · Firmware C++"
+
+# Ejecuta el análisis cuando cambia el firmware o este workflow.
+on:
+  # Analiza los cambios integrados en la rama principal.
+  push:
+    branches:
+      - main
+    paths:
+      - "firmware/**"
+      - ".github/workflows/security-firmware.yml"
+  # Analiza el código antes de fusionarlo.
+  pull_request:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/security-firmware.yml"
+  # Ejecuta una revisión semanal.
+  schedule:
+    - cron: "30 6 * * 1"
+  # Permite iniciar el análisis manualmente.
+  workflow_dispatch:
+
+# Cancela revisiones anteriores de la misma referencia.
+concurrency:
+  group: "security-firmware-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  # Ejecuta CodeQL sobre el código C y C++ sin requerir la toolchain Arduino.
+  codeql-cpp:
+    name: "CodeQL · C/C++"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      # Descarga exactamente el commit analizado.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Inicializa la base CodeQL con consultas ampliadas.
+      - name: "2 · Inicializar CodeQL C/C++"
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: none
+          queries: security-extended
+
+      # Analiza el código y publica los hallazgos en GitHub Security.
+      - name: "3 · Analizar firmware"
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:c-cpp"
+
+  # Ejecuta una segunda herramienta para defectos, portabilidad y uso de memoria.
+  cppcheck:
+    name: "Cppcheck · Firmware"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      # Descarga exactamente el código que se debe revisar.
+      - name: "1 · Descargar el repositorio"
+        uses: actions/checkout@v6
+
+      # Instala la versión disponible en el runner oficial de Ubuntu.
+      - name: "2 · Instalar Cppcheck"
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes cppcheck
+          cppcheck --version
+
+      # Analiza los archivos propios sin fallar por cabeceras externas de Arduino.
+      - name: "3 · Analizar código propio"
+        run: |
+          set -o pipefail
+          mkdir -p firmware/core2/security-results
+          cppcheck \
+            --enable=warning,performance,portability \
+            --inconclusive \
+            --inline-suppr \
+            --std=c++17 \
+            --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            --xml \
+            --xml-version=2 \
+            firmware/core2/src \
+            2> firmware/core2/security-results/cppcheck.xml
+
+      # Conserva el informe aunque se detecte un hallazgo.
+      - name: "4 · Guardar informe"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-cppcheck
+          path: firmware/core2/security-results/cppcheck.xml
+          if-no-files-found: warn
+          retention-days: 30
