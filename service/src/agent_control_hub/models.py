@@ -47,6 +47,18 @@ class TokenUsageSnapshot(BaseModel):
     source_reference: str | None = Field(default=None, max_length=240)
 
 
+class UsageBreakdown(BaseModel):
+    """Separa acumulado del hilo, última petición y contexto estimado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thread_total: TokenUsageSnapshot | None = None
+    last_request: TokenUsageSnapshot | None = None
+    context_used_tokens_estimated: int | None = Field(default=None, ge=0)
+    context_used_percent_estimated: float | None = Field(default=None, ge=0, le=100)
+    context_estimation_method: str | None = Field(default=None, max_length=80)
+
+
 class RateLimitWindowSnapshot(BaseModel):
     """Ventana temporal de cuota informada por una plataforma."""
 
@@ -73,6 +85,56 @@ class RateLimitsSnapshot(BaseModel):
     is_stale: bool = False
 
 
+class SessionInfo(BaseModel):
+    """Metadatos sanitizados de una sesión local de una plataforma."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(min_length=1, max_length=120)
+    started_at: datetime
+    last_activity_at: datetime | None = None
+    originator: str | None = Field(default=None, max_length=80)
+    source: str | None = Field(default=None, max_length=80)
+    cli_version: str | None = Field(default=None, max_length=40)
+    model_provider: str | None = Field(default=None, max_length=80)
+
+
+class ProjectInfo(BaseModel):
+    """Identidad sanitizada del proyecto asociado a una sesión."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(min_length=1, max_length=120)
+    cwd_alias: str = Field(min_length=1, max_length=160)
+    repository: str | None = Field(default=None, max_length=160)
+    branch: str | None = Field(default=None, max_length=120)
+    dirty_files: int | None = Field(default=None, ge=0)
+
+
+class TaskInfo(BaseModel):
+    """Tarea visible y actividad actual sin conservar el prompt completo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = Field(default=None, max_length=180)
+    status: AgentState
+    activity: str | None = Field(default=None, max_length=180)
+    started_at: datetime | None = None
+    last_activity_at: datetime | None = None
+
+
+class ActivityItem(BaseModel):
+    """Actividad técnica reciente preparada para interfaces y alertas."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    activity_type: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=100)
+    status: AgentState
+    summary: str | None = Field(default=None, max_length=220)
+    timestamp: datetime
+
+
 class PlatformSnapshot(BaseModel):
     """Instantánea agregada de una plataforma completa."""
 
@@ -81,6 +143,8 @@ class PlatformSnapshot(BaseModel):
     platform_id: str = Field(min_length=1, max_length=40)
     display_name: str = Field(min_length=1, max_length=40)
     status: AgentState
+    status_reason: str | None = Field(default=None, max_length=80)
+    status_message: str | None = Field(default=None, max_length=180)
     tokens_today: int | None = Field(default=None, ge=0)
     cost_today: float | None = Field(default=None, ge=0)
     weekly_remaining_pct: int | None = Field(default=None, ge=0, le=100)
@@ -89,7 +153,12 @@ class PlatformSnapshot(BaseModel):
     active_agents: int = Field(default=0, ge=0)
     agents: list[AgentSnapshot] = Field(default_factory=list)
     token_usage: TokenUsageSnapshot | None = None
+    usage: UsageBreakdown | None = None
     rate_limits: RateLimitsSnapshot | None = None
+    session: SessionInfo | None = None
+    project: ProjectInfo | None = None
+    task: TaskInfo | None = None
+    recent_activity: list[ActivityItem] = Field(default_factory=list, max_length=20)
 
 
 class DeviceSnapshot(BaseModel):
