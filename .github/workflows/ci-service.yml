@@ -48,7 +48,7 @@ jobs:
     steps:
       # Descarga exactamente el código asociado al commit o pull request.
       - name: "1 · Descargar el repositorio"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Instala la versión de Python correspondiente y activa la caché de pip.
       - name: "2 · Preparar Python ${{ matrix.python-version }}"
@@ -188,7 +188,7 @@ jobs:
     steps:
       # Descarga el código validado por el trabajo anterior.
       - name: "1 · Descargar el repositorio"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Prepara la versión mínima soportada por el proyecto.
       - name: "2 · Preparar Python 3.11"

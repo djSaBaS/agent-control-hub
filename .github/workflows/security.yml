@@ -41,7 +41,7 @@ jobs:
     steps:
       # Descarga el código que se analizará.
       - name: "1 · Descargar el repositorio"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Inicializa CodeQL con consultas de seguridad ampliadas.
       - name: "2 · Inicializar CodeQL"
@@ -82,7 +82,7 @@ jobs:
     steps:
       # Descarga el repositorio para contextualizar el cambio.
       - name: "1 · Descargar el repositorio"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Comprueba si el repositorio tiene Dependency Graph disponible.
       - name: "2 · Comprobar disponibilidad de Dependency Graph"
@@ -170,7 +170,7 @@ jobs:
     steps:
       # Descarga la versión exacta del servicio.
       - name: "1 · Descargar el repositorio"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Prepara una versión estable de Python.
       - name: "2 · Preparar Python"

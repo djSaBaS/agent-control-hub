@@ -53,7 +53,7 @@ jobs:
     steps:
       # Descarga el commit que se debe compilar.
       - name: "1 · Descargar el repositorio"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Prepara Python para ejecutar PlatformIO Core.
       - name: "2 · Preparar Python"
