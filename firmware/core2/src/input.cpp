@@ -13,7 +13,7 @@ static NavigationAction readTouchNavigation() {
         return NavigationAction::None;
     }
     // Reserva la franja inferior de la pantalla para navegación común.
-    const int navigationTop = M5.Display.height() - 48;
+    const int navigationTop = M5.Display.height() - 42;
     // Ignora pulsaciones realizadas fuera de la franja de navegación.
     if (touch.y < navigationTop) {
         // Informa de que la pantalla actual debe mantenerse.
@@ -21,18 +21,18 @@ static NavigationAction readTouchNavigation() {
     }
     // Divide la anchura visible en tres zonas equivalentes.
     const int sectionWidth = M5.Display.width() / 3;
-    // Asigna la zona izquierda al resumen global.
+    // Asigna la zona izquierda a la acción anterior.
     if (touch.x < sectionWidth) {
-        // Solicita mostrar el resumen.
-        return NavigationAction::ShowDashboard;
+        // Solicita retroceder o mover la selección a la izquierda.
+        return NavigationAction::Previous;
     }
-    // Asigna la zona central a la actividad de agentes.
+    // Asigna la zona central a la confirmación.
     if (touch.x < sectionWidth * 2) {
-        // Solicita mostrar la lista de agentes.
-        return NavigationAction::ShowAgents;
+        // Solicita abrir la vista o aceptar la alerta actual.
+        return NavigationAction::Select;
     }
-    // Asigna la zona derecha a la configuración local.
-    return NavigationAction::ShowSettings;
+    // Asigna la zona derecha a la acción siguiente.
+    return NavigationAction::Next;
 }
 
 // Inicializa la capa de entrada específica del dispositivo.
@@ -43,20 +43,20 @@ void initializeInput() {
 // Obtiene una única acción de navegación normalizada.
 NavigationAction readNavigationAction() {
 #if defined(AGENT_CONTROL_BOARD_CORE2)
-    // Conserva el acceso directo mediante la zona capacitiva A del Core2.
+    // Conserva el botón A como acción anterior en Core2.
     if (M5.BtnA.wasPressed()) {
-        // Solicita mostrar el resumen global.
-        return NavigationAction::ShowDashboard;
+        // Solicita retroceder o seleccionar la plataforma anterior.
+        return NavigationAction::Previous;
     }
-    // Conserva el acceso directo mediante la zona capacitiva B del Core2.
+    // Conserva el botón B como acción de selección en Core2.
     if (M5.BtnB.wasPressed()) {
-        // Solicita mostrar la actividad de agentes.
-        return NavigationAction::ShowAgents;
+        // Solicita abrir o confirmar el elemento actual.
+        return NavigationAction::Select;
     }
-    // Conserva el acceso directo mediante la zona capacitiva C del Core2.
+    // Conserva el botón C como acción siguiente en Core2.
     if (M5.BtnC.wasPressed()) {
-        // Solicita mostrar la configuración.
-        return NavigationAction::ShowSettings;
+        // Solicita avanzar o seleccionar la plataforma siguiente.
+        return NavigationAction::Next;
     }
 #endif
     // Utiliza navegación táctil común en Core2 y en la familia CoreS3.

@@ -7,6 +7,9 @@
 - Codificación UTF-8.
 - Un objeto JSON por línea.
 - Terminador `\n`.
+- Tamaño máximo admitido por el firmware MVP: 64 KB por línea.
+
+El firmware conserva el último snapshot válido cuando recibe JSON incompleto, una versión incompatible o un frame que supera el límite. Después de un frame excesivo descarta bytes hasta el siguiente salto de línea para recuperar la sincronización.
 
 ## Compatibilidad
 
@@ -42,7 +45,8 @@ Cada plataforma puede añadir:
     "originator": "Codex Desktop",
     "source": "vscode",
     "cli_version": "0.142.3",
-    "model_provider": "openai"
+    "model_provider": "openai",
+    "model_name": null
   },
   "project": {
     "display_name": "Prometeo 7.2 - 8.4",
@@ -53,8 +57,12 @@ Cada plataforma puede añadir:
   },
   "task": {
     "display_name": "Revisar el módulo de alumnos",
+    "conversation_name": null,
+    "objective": "Revisar el módulo de alumnos antes de producción.",
     "status": "waiting",
     "activity": "Límite de uso agotado; consulta el reinicio de cuota.",
+    "last_result": "174 de 174 rutas verificadas.",
+    "pending": null,
     "started_at": "2026-07-23T20:07:10Z",
     "last_activity_at": "2026-07-23T20:07:15.661Z"
   },
@@ -71,6 +79,32 @@ Cada plataforma puede añadir:
 ```
 
 Las rutas completas, correos, URLs, secretos y prompts extensos se eliminan o sustituyen antes de construir estos modelos.
+
+El firmware MVP conserva como máximo cuatro plataformas y tres actividades recientes por plataforma. El resto continúa disponible en el visor web, pero no se copia a la memoria visual del dispositivo.
+
+## Alertas operativas
+
+La raíz del snapshot puede incluir una colección `alerts` compatible hacia atrás:
+
+```json
+{
+  "alerts": [
+    {
+      "alert_id": "codex-quota-restored-1784899200000000",
+      "alert_type": "quota_restored",
+      "platform_id": "codex",
+      "title": "OpenAI Codex vuelve a estar disponible",
+      "message": "La cuota se ha restablecido y ya puede volver a utilizarse.",
+      "severity": "info",
+      "created_at": "2026-07-24T12:00:00Z"
+    }
+  ]
+}
+```
+
+`alert_id` es obligatorio para deduplicar. El servicio retiene cada evento durante dos minutos y el firmware guarda el último identificador mostrado. Una alerta nueva interrumpe la vista actual, reproduce una señal breve, permanece visible durante quince segundos y puede cerrarse mediante cualquier control. La vista anterior se restaura después del cierre.
+
+El dispositivo no calcula el restablecimiento a partir de `resets_at`. Reacciona únicamente a eventos observados por el servicio, como `quota_restored`.
 
 ## Significado del consumo
 
