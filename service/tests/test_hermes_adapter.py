@@ -200,7 +200,7 @@ def test_collects_latest_hermes_session_from_read_only_sqlite(tmp_path: Path) ->
     snapshot = asyncio.run(
         HermesAdapter(
             hermes_home=hermes_home,
-            gateway_probe=lambda: "stopped",
+            gateway_probe=lambda _profile: "stopped",
         ).collect()
     )
 
@@ -290,7 +290,7 @@ def test_marks_latest_user_message_as_working(tmp_path: Path) -> None:
     snapshot = asyncio.run(
         HermesAdapter(
             hermes_home=hermes_home,
-            gateway_probe=lambda: "running",
+            gateway_probe=lambda _profile: "running",
         ).collect()
     )
 
@@ -381,7 +381,7 @@ def test_truncates_long_messages_to_public_contract(tmp_path: Path) -> None:
     snapshot = asyncio.run(
         HermesAdapter(
             hermes_home=hermes_home,
-            gateway_probe=lambda: "stopped",
+            gateway_probe=lambda _profile: "stopped",
         ).collect()
     )
 
@@ -445,7 +445,7 @@ def test_truncates_long_tool_result_without_losing_working_state(tmp_path: Path)
     snapshot = asyncio.run(
         HermesAdapter(
             hermes_home=hermes_home,
-            gateway_probe=lambda: "running",
+            gateway_probe=lambda _profile: "running",
         ).collect()
     )
 
@@ -457,3 +457,100 @@ def test_truncates_long_tool_result_without_losing_working_state(tmp_path: Path)
     assert snapshot.recent_activity
     assert snapshot.recent_activity[0].summary is not None
     assert len(snapshot.recent_activity[0].summary) <= 220
+
+
+# Valida el descubrimiento de un profile nombrado con actividad más reciente.
+def test_discovers_most_recent_named_profile_without_mixing_state(tmp_path: Path) -> None:
+    """Selecciona profiles/<nombre>/state.db y conserva aislamiento de sesiones."""
+
+    # Crea la raíz equivalente a HERMES_HOME.
+    hermes_root = tmp_path / "hermes"
+    # Prepara la raíz del profile predeterminado.
+    hermes_root.mkdir()
+    # Crea la base del profile predeterminado con actividad antigua.
+    default_connection = _create_database(hermes_root / "state.db")
+    # Obtiene una referencia temporal común.
+    now = time.time()
+    # Inserta una sesión antigua que no debe seguir apareciendo.
+    _insert_session(default_connection, now - 3600, title="Sesión antigua predeterminada")
+    # Inserta una respuesta antigua para fijar la última actividad.
+    default_connection.execute(
+        """
+        INSERT INTO messages (
+            session_id, role, content, timestamp, finish_reason, active, compacted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "20260724_113225_5c7a60",
+            "assistant",
+            "Resultado antiguo.",
+            now - 3500,
+            "stop",
+            1,
+            0,
+        ),
+    )
+    # Guarda y cierra la base predeterminada.
+    default_connection.commit()
+    default_connection.close()
+
+    # Crea el contenedor oficial de profiles.
+    profile_home = hermes_root / "profiles" / "genealogia"
+    # Prepara la carpeta aislada del nuevo profile.
+    profile_home.mkdir(parents=True)
+    # Crea su base independiente.
+    profile_connection = _create_database(profile_home / "state.db")
+    # Inserta la sesión más reciente observada en Hermes Desktop.
+    _insert_session(
+        profile_connection,
+        now - 20,
+        title="Revisa HERMES.md y los archivos del árbol",
+    )
+    # Inserta una solicitud pendiente para representar trabajo en curso.
+    profile_connection.execute(
+        """
+        INSERT INTO messages (
+            session_id, role, content, timestamp, finish_reason, active, compacted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "20260724_113225_5c7a60",
+            "user",
+            "Inicializa el registro de investigación sin modificar datos consolidados.",
+            now,
+            None,
+            1,
+            0,
+        ),
+    )
+    # Guarda y cierra el profile nombrado.
+    profile_connection.commit()
+    profile_connection.close()
+    # Registra el profile activo como desempate oficial.
+    (hermes_root / "active_profile").write_text("genealogia\n", encoding="utf-8")
+
+    # Registra el nombre recibido por la sonda de gateway.
+    observed_profiles: list[str | None] = []
+
+    # Ejecuta la captura sobre la raíz común.
+    snapshot = asyncio.run(
+        HermesAdapter(
+            hermes_home=hermes_root,
+            gateway_probe=lambda profile: observed_profiles.append(profile) or "running",
+        ).collect()
+    )
+
+    # Confirma que el encabezado identifica el nuevo profile.
+    assert snapshot.display_name == "Hermes · genealogia"
+    # Confirma que se publica la conversación más reciente y no la antigua.
+    assert snapshot.task is not None
+    assert snapshot.task.conversation_name == "Revisa HERMES.md y los archivos del árbol"
+    # Confirma el estado de trabajo derivado de la solicitud pendiente.
+    assert snapshot.status == AgentState.WORKING
+    # Confirma que la sonda consulta el mismo profile.
+    assert observed_profiles == ["genealogia"]
+    # Confirma la referencia relativa sin ruta del usuario.
+    assert snapshot.token_usage is not None
+    assert snapshot.token_usage.source_reference == "profiles/genealogia/state.db"
+    # Impide filtrar el directorio temporal completo.
+    assert str(tmp_path) not in snapshot.model_dump_json()

@@ -110,6 +110,17 @@ class _HermesMessage:
     active: bool | None
 
 
+# Representa una fuente de estado aislada perteneciente a un profile de Hermes.
+@dataclass(frozen=True, slots=True)
+class _HermesProfileSource:
+    """Describe un HERMES_HOME sin exponer su ruta absoluta."""
+
+    profile_name: str
+    home: Path
+    database_path: Path
+    is_default: bool
+
+
 # Devuelve la ubicación predeterminada utilizada por Hermes Desktop.
 def _default_hermes_home() -> Path:
     """Resuelve HERMES_HOME sin depender de una ruta fija del usuario."""
@@ -126,6 +137,120 @@ def _default_hermes_home() -> Path:
         return Path(local_app_data) / "hermes"
     # Mantiene compatibilidad con instalaciones CLI de Linux y macOS.
     return Path.home() / ".hermes"
+
+
+# Normaliza un nombre de profile sin convertirlo en una ruta pública.
+def _profile_name(value: object) -> str | None:
+    """Acepta únicamente nombres breves, visibles y sin segmentos especiales."""
+
+    # Reutiliza la normalización textual común.
+    normalized = _optional_text(value, 32)
+    # Rechaza nombres vacíos y segmentos con significado de navegación.
+    if normalized is None or normalized in {".", ".."}:
+        return None
+    # Evita representar separadores como parte del nombre del profile.
+    if "/" in normalized or "\\" in normalized:
+        return None
+    # Devuelve el identificador visible validado.
+    return normalized
+
+
+# Descubre el profile predeterminado y los profiles aislados instalados.
+def _discover_profile_sources(hermes_root: Path) -> list[_HermesProfileSource]:
+    """Busca únicamente state.db en la raíz y en profiles/<nombre>."""
+
+    # Inicializa la colección sin recorrer de forma recursiva rutas arbitrarias.
+    sources: list[_HermesProfileSource] = []
+    # Comprueba la base canónica del profile predeterminado.
+    default_database = hermes_root / "state.db"
+    # Conserva la fuente predeterminada cuando es un archivo real y no un enlace.
+    if default_database.is_file() and not default_database.is_symlink():
+        sources.append(
+            _HermesProfileSource(
+                profile_name="default",
+                home=hermes_root,
+                database_path=default_database,
+                is_default=True,
+            )
+        )
+    # Resuelve el único contenedor oficial de profiles.
+    profiles_root = hermes_root / "profiles"
+    # Devuelve las fuentes encontradas cuando todavía no existe ese contenedor.
+    if not profiles_root.is_dir() or profiles_root.is_symlink():
+        return sources
+    # Recorre únicamente hijos directos para impedir búsquedas amplias o costosas.
+    try:
+        profile_homes = sorted(profiles_root.iterdir(), key=lambda path: path.name.casefold())
+    # Conserva el profile predeterminado cuando Windows niega el listado.
+    except OSError:
+        return sources
+    # Valida cada directorio candidato de forma independiente.
+    for profile_home in profile_homes:
+        # Ignora archivos y enlaces de directorio.
+        if not profile_home.is_dir() or profile_home.is_symlink():
+            continue
+        # Normaliza el nombre sin publicar la ruta completa.
+        name = _profile_name(profile_home.name)
+        # Omite nombres no representables de forma segura.
+        if name is None:
+            continue
+        # Construye la ubicación canónica dentro del profile.
+        database_path = profile_home / "state.db"
+        # Exige una base real y rechaza enlaces a archivos externos.
+        if not database_path.is_file() or database_path.is_symlink():
+            continue
+        # Añade la fuente aislada validada.
+        sources.append(
+            _HermesProfileSource(
+                profile_name=name,
+                home=profile_home,
+                database_path=database_path,
+                is_default=False,
+            )
+        )
+    # Devuelve una lista estable para diagnóstico y pruebas.
+    return sources
+
+
+# Lee el profile preferido por Hermes cuando existe el marcador oficial.
+def _active_profile_name(hermes_root: Path) -> str | None:
+    """Interpreta active_profile sin aceptar archivos grandes o enlaces."""
+
+    # Localiza el marcador compartido por los comandos profile use.
+    marker = hermes_root / "active_profile"
+    # Rechaza ausencias y enlaces antes de abrir el archivo.
+    if not marker.is_file() or marker.is_symlink():
+        return None
+    # Limita el tamaño para no leer contenido inesperado.
+    try:
+        if marker.stat().st_size > 1024:
+            return None
+        return _profile_name(marker.read_text(encoding="utf-8", errors="replace"))
+    # Ignora fallos de acceso y permite usar la actividad como alternativa.
+    except OSError:
+        return None
+
+
+# Construye el nombre corto mostrado por dashboard y dispositivo.
+def _profile_display_name(source: _HermesProfileSource) -> str:
+    """Mantiene el nombre histórico para default e identifica profiles nombrados."""
+
+    # Evita modificar la interfaz de instalaciones sin profiles.
+    if source.is_default:
+        return "Hermes Agent"
+    # Acota el nombre completo al límite del contrato público.
+    return _optional_text(f"Hermes · {source.profile_name}", 40) or "Hermes Agent"
+
+
+# Construye una referencia relativa y no sensible a la base seleccionada.
+def _profile_source_reference(source: _HermesProfileSource) -> str:
+    """Identifica la fuente sin publicar HERMES_HOME ni el usuario de Windows."""
+
+    # Conserva compatibilidad con el valor original.
+    if source.is_default:
+        return "state.db"
+    # Publica únicamente el nombre validado del profile.
+    return f"profiles/{source.profile_name}/state.db"
 
 
 # Convierte una marca temporal Unix en una fecha UTC válida.
@@ -347,7 +472,7 @@ def _context_window_from_cache(path: Path, model: str | None) -> int | None:
 
 
 # Consulta el estado del gateway mediante la CLI oficial.
-def _default_gateway_probe() -> str:
+def _default_gateway_probe(profile_name: str | None) -> str:
     """Devuelve running, stopped o unknown sin lanzar un shell."""
 
     # Localiza la CLI instalada en PATH.
@@ -357,8 +482,16 @@ def _default_gateway_probe() -> str:
         return "unknown"
     # Ejecuta únicamente el subcomando oficial con tiempo máximo.
     try:
+        # Construye argumentos separados para impedir interpretación por shell.
+        command = [executable]
+        # Selecciona el mismo profile que aporta la sesión cuando no es default.
+        if profile_name is not None and profile_name != "default":
+            command.extend(["--profile", profile_name])
+        # Añade el único subcomando permitido por esta sonda.
+        command.extend(["gateway", "status"])
+        # Ejecuta la consulta oficial con tiempo máximo.
         completed = subprocess.run(
-            [executable, "gateway", "status"],
+            command,
             capture_output=True,
             check=False,
             text=True,
@@ -696,6 +829,7 @@ def _latest_message(
 def _build_usage(
     session: _HermesSession,
     context_window: int | None,
+    source_reference: str,
 ) -> UsageBreakdown:
     """Publica acumulado de sesión sin confundirlo con contexto actual."""
 
@@ -713,7 +847,7 @@ def _build_usage(
         scope="session_total",
         source=_SOURCE_NAME,
         updated_at=session.last_activity_at,
-        source_reference="state.db",
+        source_reference=source_reference,
     )
     # No estima contexto usado porque state.db no contiene esa métrica exacta.
     return UsageBreakdown(thread_total=thread_total)
@@ -727,20 +861,20 @@ class HermesAdapter(PlatformAdapter):
     def __init__(
         self,
         hermes_home: Path | None = None,
-        gateway_probe: Callable[[], str] | None = None,
+        gateway_probe: Callable[[str | None], str] | None = None,
     ) -> None:
         """Prepara la fuente local sin abrir conexiones persistentes."""
 
-        # Resuelve la carpeta de datos efectiva.
-        self._hermes_home = hermes_home or _default_hermes_home()
-        # Construye la ruta canónica de SQLite.
-        self._database_path = self._hermes_home / "state.db"
+        # Resuelve la raíz que contiene default y profiles nombrados.
+        self._hermes_root = hermes_home or _default_hermes_home()
         # Conserva la función de estado del gateway.
         self._gateway_probe = gateway_probe or _default_gateway_probe
         # Inicializa la caché de gateway.
         self._gateway_status = "unknown"
         # Inicializa la fecha de la última consulta.
         self._gateway_checked_at: datetime | None = None
+        # Registra el profile asociado a la caché para no mezclar gateways.
+        self._gateway_profile_name: str | None = None
 
     # Expone el identificador estable del protocolo.
     @property
@@ -758,54 +892,121 @@ class HermesAdapter(PlatformAdapter):
         return await asyncio.to_thread(self._collect_sync)
 
     # Actualiza el estado del gateway con una frecuencia acotada.
-    def _cached_gateway_status(self, now: datetime) -> str:
+    def _cached_gateway_status(self, now: datetime, profile_name: str) -> str:
         """Evita ejecutar hermes gateway status cada cinco segundos."""
 
-        # Comprueba si la caché sigue vigente.
-        if self._gateway_checked_at is not None and now - self._gateway_checked_at < timedelta(
-            seconds=_GATEWAY_CACHE_SECONDS
+        # Comprueba si la caché sigue vigente y pertenece al mismo profile.
+        if (
+            self._gateway_checked_at is not None
+            and self._gateway_profile_name == profile_name
+            and now - self._gateway_checked_at < timedelta(seconds=_GATEWAY_CACHE_SECONDS)
         ):
             return self._gateway_status
-        # Ejecuta la sonda controlada.
-        self._gateway_status = self._gateway_probe()
+        # Ejecuta la sonda controlada para el profile seleccionado.
+        self._gateway_status = self._gateway_probe(profile_name)
         # Guarda la fecha de actualización.
         self._gateway_checked_at = now
+        # Asocia la caché con el profile consultado.
+        self._gateway_profile_name = profile_name
         # Devuelve el estado observado.
         return self._gateway_status
 
+    # Inspecciona todas las bases válidas y selecciona el profile más reciente.
+    def _select_profile_source(
+        self,
+        sources: list[_HermesProfileSource],
+    ) -> tuple[_HermesProfileSource, _HermesSession | None] | None:
+        """Prioriza actividad real y usa active_profile únicamente como desempate."""
+
+        # Lee una sola vez el marcador oficial.
+        active_profile = _active_profile_name(self._hermes_root)
+        # Inicializa candidatos que pudieron abrirse correctamente.
+        candidates: list[tuple[_HermesProfileSource, _HermesSession | None]] = []
+        # Recorre cada base aislada sin mantener conexiones abiertas.
+        for source in sources:
+            try:
+                connection = _open_database(source.database_path)
+                try:
+                    session = _load_latest_session(connection)
+                finally:
+                    connection.close()
+            # Omite un profile dañado cuando otro profile sigue siendo legible.
+            except sqlite3.Error:
+                continue
+            # Conserva la fuente y su última sesión comprobada.
+            candidates.append((source, session))
+        # Indica que ninguna base pudo inspeccionarse.
+        if not candidates:
+            return None
+
+        # Construye una clave estable basada primero en actividad real.
+        def candidate_key(
+            candidate: tuple[_HermesProfileSource, _HermesSession | None],
+        ) -> tuple[float, int, int]:
+            # Separa la fuente de la sesión inspeccionada.
+            source, session = candidate
+            # Utiliza cero cuando el profile todavía no tiene sesiones.
+            activity = session.last_activity_at.timestamp() if session is not None else 0.0
+            # Utiliza el marcador oficial únicamente para resolver empates.
+            active_rank = int(active_profile == source.profile_name)
+            # Mantiene default como último desempate para compatibilidad.
+            default_rank = int(source.is_default)
+            # Devuelve la clave comparable.
+            return activity, active_rank, default_rank
+
+        # Devuelve el profile con actividad más nueva.
+        return max(candidates, key=candidate_key)
+
     # Construye una instantánea completa desde una conexión efímera.
     def _collect_sync(self) -> PlatformSnapshot:
-        """Abre SQLite en modo ro, consulta datos y cierra la conexión."""
+        """Descubre profiles, abre SQLite en modo ro y publica el más activo."""
 
-        # Comprueba la existencia de la base antes de abrirla.
-        if not self._database_path.is_file():
+        # Descubre únicamente las ubicaciones oficiales de estado.
+        sources = _discover_profile_sources(self._hermes_root)
+        # Informa de ausencia cuando no existe ninguna base canónica.
+        if not sources:
             return PlatformSnapshot(
                 platform_id=self.platform_id,
                 display_name="Hermes Agent",
                 status=AgentState.OFFLINE,
                 status_reason="state_db_unavailable",
-                status_message="No se encuentra state.db de Hermes.",
+                status_message="No se encuentra state.db de Hermes ni de sus profiles.",
             )
+        # Selecciona el profile con actividad real más reciente.
+        selected = self._select_profile_source(sources)
+        # Informa de error cuando existen bases pero ninguna es legible.
+        if selected is None:
+            return PlatformSnapshot(
+                platform_id=self.platform_id,
+                display_name="Hermes Agent",
+                status=AgentState.ERROR,
+                status_reason="state_db_error",
+                status_message="No se pudo leer ningún state.db de Hermes.",
+            )
+        # Separa la fuente seleccionada y la sesión ya inspeccionada.
+        source, inspected_session = selected
+        # Construye el nombre visible sin publicar la ruta local.
+        display_name = _profile_display_name(source)
         # Obtiene la hora actual una sola vez para mantener coherencia.
         now = datetime.now(UTC)
-        # Abre la conexión protegida.
+        # Abre de nuevo solo la base seleccionada para completar su telemetría.
         try:
-            connection = _open_database(self._database_path)
+            connection = _open_database(source.database_path)
             try:
-                # Carga la sesión principal.
-                session = _load_latest_session(connection)
-                # Carga contadores globales.
+                # Relee la sesión para incluir cambios ocurridos durante el descubrimiento.
+                session = _load_latest_session(connection) or inspected_session
+                # Carga contadores exclusivos del profile seleccionado.
                 session_count, global_message_count = _load_global_counts(connection)
                 # Carga mensajes únicamente cuando hay una sesión.
                 messages = _load_messages(connection, session.session_id) if session else []
             # Garantiza el cierre incluso cuando una consulta falle.
             finally:
                 connection.close()
-        # Convierte cualquier error SQLite en estado operativo visible.
+        # Convierte errores del profile elegido en estado operativo visible.
         except sqlite3.Error as error:
             return PlatformSnapshot(
                 platform_id=self.platform_id,
-                display_name="Hermes Agent",
+                display_name=display_name,
                 status=AgentState.ERROR,
                 status_reason="state_db_error",
                 status_message=_sanitize_text(str(error), 180) or "No se pudo leer state.db.",
@@ -814,15 +1015,15 @@ class HermesAdapter(PlatformAdapter):
         if session is None:
             return PlatformSnapshot(
                 platform_id=self.platform_id,
-                display_name="Hermes Agent",
+                display_name=display_name,
                 status=AgentState.IDLE,
                 status_reason="no_sessions",
-                status_message="Hermes no tiene sesiones registradas.",
+                status_message=f"El profile {source.profile_name} no tiene sesiones registradas.",
                 runtime=PlatformRuntimeInfo(
-                    gateway_status=self._cached_gateway_status(now),
+                    gateway_status=self._cached_gateway_status(now, source.profile_name),
                     session_count=session_count,
                     message_count=global_message_count,
-                    cron_job_count=_cron_job_count(self._hermes_home / "cron" / "jobs.json"),
+                    cron_job_count=_cron_job_count(source.home / "cron" / "jobs.json"),
                 ),
             )
         # Deriva estado y explicación desde datos reales.
@@ -839,13 +1040,17 @@ class HermesAdapter(PlatformAdapter):
             if project_alias is not None
             else None
         )
-        # Busca la ventana conocida del modelo sin estimar uso actual.
+        # Busca la ventana conocida dentro del profile seleccionado.
         context_window = _context_window_from_cache(
-            self._hermes_home / "context_length_cache.yaml",
+            source.home / "context_length_cache.yaml",
             session.model,
         )
-        # Construye el uso de tokens de la sesión.
-        usage = _build_usage(session, context_window)
+        # Construye el uso de tokens con referencia relativa al profile.
+        usage = _build_usage(
+            session,
+            context_window,
+            _profile_source_reference(source),
+        )
         # Construye la tarea visible con título real de Hermes.
         task = TaskInfo(
             display_name=_optional_text(
@@ -866,10 +1071,18 @@ class HermesAdapter(PlatformAdapter):
             started_at=session.started_at,
             last_activity_at=session.last_activity_at,
         )
+        # Identifica el originador y el profile sin publicar rutas.
+        originator_base = "Hermes Desktop" if session.source == "tui" else "Hermes Agent"
+        # Añade el profile únicamente cuando no es el predeterminado.
+        originator = (
+            originator_base
+            if source.is_default
+            else _optional_text(f"{originator_base} · {source.profile_name}", 80)
+        )
         # Construye la instantánea final sin inventar cuotas o agentes.
         return PlatformSnapshot(
             platform_id=self.platform_id,
-            display_name="Hermes Agent",
+            display_name=display_name,
             status=status,
             status_reason=status_reason,
             status_message=status_message,
@@ -883,7 +1096,7 @@ class HermesAdapter(PlatformAdapter):
                 session_id=session.session_id,
                 started_at=session.started_at,
                 last_activity_at=session.last_activity_at,
-                originator="Hermes Desktop" if session.source == "tui" else "Hermes Agent",
+                originator=originator,
                 source=session.source,
                 model_provider=session.provider,
                 model_name=session.model,
@@ -891,12 +1104,12 @@ class HermesAdapter(PlatformAdapter):
             project=project,
             task=task,
             runtime=PlatformRuntimeInfo(
-                gateway_status=self._cached_gateway_status(now),
+                gateway_status=self._cached_gateway_status(now, source.profile_name),
                 session_count=session_count,
                 message_count=session.message_count,
                 tool_call_count=session.tool_call_count,
                 api_call_count=session.api_call_count,
-                cron_job_count=_cron_job_count(self._hermes_home / "cron" / "jobs.json"),
+                cron_job_count=_cron_job_count(source.home / "cron" / "jobs.json"),
                 estimated_cost_usd=session.estimated_cost_usd,
                 actual_cost_usd=session.actual_cost_usd,
                 cost_status=session.cost_status,
