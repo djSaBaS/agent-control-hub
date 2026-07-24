@@ -97,6 +97,7 @@ class SessionInfo(BaseModel):
     source: str | None = Field(default=None, max_length=80)
     cli_version: str | None = Field(default=None, max_length=40)
     model_provider: str | None = Field(default=None, max_length=80)
+    model_name: str | None = Field(default=None, max_length=160)
 
 
 class ProjectInfo(BaseModel):
@@ -139,6 +140,22 @@ class ActivityItem(BaseModel):
     timestamp: datetime
 
 
+class PlatformRuntimeInfo(BaseModel):
+    """Metadatos operativos opcionales compartidos por plataformas locales."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gateway_status: str | None = Field(default=None, max_length=40)
+    session_count: int | None = Field(default=None, ge=0)
+    message_count: int | None = Field(default=None, ge=0)
+    tool_call_count: int | None = Field(default=None, ge=0)
+    api_call_count: int | None = Field(default=None, ge=0)
+    cron_job_count: int | None = Field(default=None, ge=0)
+    estimated_cost_usd: float | None = Field(default=None, ge=0)
+    actual_cost_usd: float | None = Field(default=None, ge=0)
+    cost_status: str | None = Field(default=None, max_length=40)
+
+
 class PlatformSnapshot(BaseModel):
     """Instantánea agregada de una plataforma completa."""
 
@@ -162,6 +179,7 @@ class PlatformSnapshot(BaseModel):
     session: SessionInfo | None = None
     project: ProjectInfo | None = None
     task: TaskInfo | None = None
+    runtime: PlatformRuntimeInfo | None = None
     recent_activity: list[ActivityItem] = Field(default_factory=list, max_length=20)
 
 
