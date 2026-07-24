@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 # Inicia el servidor HTTP propio enlazado exclusivamente a 127.0.0.1.
 function Start-AgentControlLoopbackViewer {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Low")]
     param(
         # Recibe el intérprete Python del entorno virtual del servicio.
         [Parameter(Mandatory = $true)]
@@ -49,6 +49,12 @@ function Start-AgentControlLoopbackViewer {
             "El puerto local $Port ya está ocupado por el proceso " +
             "$($ExistingListener.OwningProcess). Cierra ese proceso o utiliza -ViewerPort con otro valor."
         )
+    }
+
+    # Permite que -WhatIf muestre la acción sin iniciar procesos.
+    if (-not $PSCmdlet.ShouldProcess("127.0.0.1:$Port", "Iniciar servidor HTTP local")) {
+        # Finaliza sin modificar el estado del sistema.
+        return
     }
 
     # Protege la ruta pública con comillas para Start-Process.
@@ -97,21 +103,22 @@ function Start-AgentControlLoopbackViewer {
                 return $ViewerProcess
             }
         } catch {
-            # Ignora fallos transitorios mientras el proceso abre el socket.
+            # Registra únicamente en modo detallado el fallo transitorio esperado.
+            Write-Verbose "El visor aún no responde: $($_.Exception.Message)"
         }
         # Espera cien milisegundos antes del siguiente intento.
         Start-Sleep -Milliseconds 100
     }
 
     # Cierra el proceso auxiliar cuando no llegó a estar preparado.
-    Stop-AgentControlLoopbackViewer -ViewerProcess $ViewerProcess
+    Stop-AgentControlLoopbackViewer -ViewerProcess $ViewerProcess -Confirm:$false
     # Informa de que la ruta de salud no respondió a tiempo.
     throw "El servidor local no respondió en $HealthUrl"
 }
 
 # Detiene únicamente el proceso del visor iniciado por el lanzador actual.
 function Stop-AgentControlLoopbackViewer {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Low")]
     param(
         # Recibe el proceso devuelto por Start-AgentControlLoopbackViewer.
         [Parameter(Mandatory = $true)]
@@ -121,6 +128,11 @@ function Stop-AgentControlLoopbackViewer {
     # Evita actuar sobre un proceso que ya haya terminado.
     if ($ViewerProcess.HasExited) {
         # Finaliza sin generar errores innecesarios.
+        return
+    }
+    # Permite que -WhatIf muestre la acción sin detener procesos.
+    if (-not $PSCmdlet.ShouldProcess("PID $($ViewerProcess.Id)", "Detener servidor HTTP local")) {
+        # Finaliza sin modificar el proceso.
         return
     }
     # Solicita la terminación del proceso auxiliar concreto.
