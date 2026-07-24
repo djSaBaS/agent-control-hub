@@ -17,6 +17,12 @@
 - Diagnósticos MyPy, JUnit, cobertura y logs de firmware conservados como artefactos.
 - Adaptador local de Codex para tokens y límites reales desde archivos de sesión.
 - Exportación atómica de `snapshot.json` y visor local compatible con WAMP.
+- Sesión, proyecto, tarea y actividad reciente extraídos de JSONL y sanitizados.
+- Máquina de estados real con detección de herramientas, finalización, errores y cuota agotada.
+- Consumo separado entre acumulado del hilo, última petición, contexto estimado y cuota oficial.
+- Lectura incremental de JSONL con detección de truncado o rotación y memoria acotada.
+- Visor local reorganizado para priorizar estado, proyecto, tarea, resultados y actividad.
+- Fixtures y pruebas para compatibilidad, sanitización, límite agotado y lectura incremental.
 
 ## 0.1.0 - 2026-07-22
 
