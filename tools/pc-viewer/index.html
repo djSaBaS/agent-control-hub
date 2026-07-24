@@ -120,6 +120,13 @@
     const formatPercent = value => value == null
       ? 'No disponible'
       : `${new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(value)} %`;
+    const formatCurrency = value => value == null
+      ? 'No disponible'
+      : new Intl.NumberFormat('es-ES', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 6
+      }).format(value);
     const formatDate = value => value
       ? new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(value))
       : 'No disponible';
@@ -242,6 +249,7 @@
         if (item.activity_type === 'tool' && platform.status !== 'working') return false;
         if (hasApplyPatchResult && item.activity_type === 'patch') return false;
         if (equivalentText(item.summary, platform.task?.last_result)) return false;
+        if (equivalentText(item.summary, platform.task?.objective)) return false;
         if (equivalentText(item.summary, platform.task?.activity)) return false;
         const summaryKey = normalizeUiText(item.summary);
         const itemKey = `${normalizeUiText(item.label)}|${summaryKey}`;
@@ -278,6 +286,53 @@
         list.append(row);
       });
       wrapper.append(heading, list);
+      return wrapper;
+    }
+
+    function renderRuntime(platform) {
+      const runtime = platform.runtime;
+      if (!runtime) return null;
+      const values = [
+        runtime.gateway_status != null
+          ? ['Gateway', runtime.gateway_status === 'running'
+            ? 'En ejecución'
+            : runtime.gateway_status === 'stopped' ? 'Detenido' : 'Desconocido']
+          : null,
+        runtime.session_count != null
+          ? ['Sesiones registradas', formatNumber(runtime.session_count)]
+          : null,
+        runtime.message_count != null
+          ? ['Mensajes de la sesión', formatNumber(runtime.message_count)]
+          : null,
+        runtime.tool_call_count != null
+          ? ['Herramientas usadas', formatNumber(runtime.tool_call_count)]
+          : null,
+        runtime.api_call_count != null
+          ? ['Llamadas API', formatNumber(runtime.api_call_count)]
+          : null,
+        runtime.cron_job_count != null
+          ? ['Trabajos cron', formatNumber(runtime.cron_job_count)]
+          : null,
+        runtime.estimated_cost_usd != null
+          ? ['Coste estimado de sesión', formatCurrency(runtime.estimated_cost_usd)]
+          : null,
+        runtime.actual_cost_usd != null
+          ? ['Coste real de sesión', formatCurrency(runtime.actual_cost_usd)]
+          : null,
+        runtime.cost_status
+          ? ['Estado del coste', runtime.cost_status]
+          : null
+      ].filter(Boolean);
+      if (!values.length) return null;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'limits';
+      const heading = document.createElement('h3');
+      heading.textContent = 'Estado de la plataforma';
+      heading.style.marginTop = '0';
+      const grid = document.createElement('div');
+      grid.className = 'limits-grid';
+      values.forEach(([label, value]) => grid.append(metric(label, value)));
+      wrapper.append(heading, grid);
       return wrapper;
     }
 
@@ -372,7 +427,9 @@
         && !equivalentText(project.cwd_alias, project.display_name)
         ? `Ruta sanitizada: ${project.cwd_alias}`
         : null;
-      overviewSections.push(section('Proyecto', project?.display_name, projectRoute));
+      if (project?.display_name) {
+        overviewSections.push(section('Proyecto', project.display_name, projectRoute));
+      }
 
       const task = platform.task;
       const conversation = task?.conversation_name;
@@ -394,6 +451,15 @@
       }
       if (result) overviewSections.push(section('Último resultado', result[0], result[1]));
       if (task?.pending) overviewSections.push(section('Pendiente', task.pending));
+      if (platform.session?.model_name) {
+        overviewSections.push(section(
+          'Modelo',
+          platform.session.model_name,
+          platform.session.model_provider
+            ? `Proveedor: ${platform.session.model_provider}`
+            : null
+        ));
+      }
       if (platform.session) {
         overviewSections.push(section(
           'Sesión',
@@ -404,6 +470,8 @@
       overview.append(...overviewSections);
       card.append(overview);
 
+      const runtime = renderRuntime(platform);
+      if (runtime) card.append(runtime);
       const limits = renderLimits(platform);
       if (limits) card.append(limits);
       const activity = renderActivity(platform);
