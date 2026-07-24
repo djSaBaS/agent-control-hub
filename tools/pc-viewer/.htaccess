@@ -1,0 +1,36 @@
+# Evita que Apache publique listados de archivos del directorio.
+Options -Indexes
+
+# Restringe todo el visor al propio equipo mediante Apache 2.4.
+<IfModule mod_authz_core.c>
+    Require local
+</IfModule>
+
+# Mantiene compatibilidad defensiva con instalaciones Apache 2.2 antiguas.
+<IfModule !mod_authz_core.c>
+    Order Deny,Allow
+    Deny from all
+    Allow from 127.0.0.1
+    Allow from ::1
+</IfModule>
+
+# Bloquea archivos auxiliares aunque aparezcan accidentalmente en el directorio.
+<FilesMatch "(^\.|\.(?:tmp|log|bak|sqlite|db|jsonl|env|key|pem|pfx|p12)$)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Añade cabeceras defensivas cuando mod_headers está disponible.
+<IfModule mod_headers.c>
+    Header always set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header always set Pragma "no-cache"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), usb=()"
+    Header always set Content-Security-Policy "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+</IfModule>

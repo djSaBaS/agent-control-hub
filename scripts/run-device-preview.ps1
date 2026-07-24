@@ -12,7 +12,9 @@ param(
     # Permite evitar la apertura automática del navegador.
     [switch]$DoNotOpenBrowser,
     # Permite desactivar los avisos nativos de Windows.
-    [switch]$DisableWindowsNotifications
+    [switch]$DisableWindowsNotifications,
+    # Permite omitir únicamente la comprobación activa por IP local.
+    [switch]$SkipNetworkIsolationCheck
 )
 
 # Detiene el script ante cualquier error no controlado.
@@ -30,10 +32,22 @@ $VirtualEnvironment = Join-Path $ServiceRoot ".venv"
 $PythonExecutable = Join-Path $VirtualEnvironment "Scripts\python.exe"
 # Resuelve el visor web sanitizado.
 $ViewerSource = Join-Path $RepositoryRoot "tools\pc-viewer\index.html"
+# Resuelve la política Apache que restringe el visor al propio equipo.
+$ViewerSecuritySource = Join-Path $RepositoryRoot "tools\pc-viewer\.htaccess"
+# Resuelve el helper común de aislamiento.
+$ViewerSecurityHelper = Join-Path $RepositoryRoot "scripts\viewer-security.ps1"
 # Resuelve el snapshot servido por WAMP.
 $SnapshotPath = Join-Path $WebRoot "snapshot.json"
 # Resuelve el destino del visor web.
 $ViewerTarget = Join-Path $WebRoot "index.html"
+
+# Comprueba que existe el helper antes de publicar la vista local.
+if (-not (Test-Path -LiteralPath $ViewerSecurityHelper)) {
+    # Evita ejecutar sin las comprobaciones de aislamiento.
+    throw "No se encuentra el helper de seguridad en $ViewerSecurityHelper"
+}
+# Carga las funciones de seguridad del visor.
+. $ViewerSecurityHelper
 
 # Comprueba que existe el entorno creado por el lanzador habitual.
 if (-not (Test-Path -LiteralPath $PythonExecutable)) {
@@ -72,7 +86,15 @@ if ($Port -notin $AvailablePorts) {
 # Prepara el directorio servido por WAMP.
 New-Item -Path $WebRoot -ItemType Directory -Force | Out-Null
 # Copia el visor web correspondiente a la rama actual.
-Copy-Item -Path $ViewerSource -Destination $ViewerTarget -Force
+Copy-Item -LiteralPath $ViewerSource -Destination $ViewerTarget -Force
+# Agrupa los parámetros de instalación de la política Apache.
+$ViewerSecurityParameters = @{
+    SecuritySource = $ViewerSecuritySource
+    WebRoot = $WebRoot
+    SkipNetworkIsolationCheck = $SkipNetworkIsolationCheck
+}
+# Instala la restricción local y comprueba la exposición de red.
+Install-AgentControlViewerSecurity @ViewerSecurityParameters
 
 # Define la URL local del visor.
 $PreviewUrl = "http://localhost/agent-control-hub/"
