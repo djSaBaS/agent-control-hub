@@ -23,6 +23,37 @@ snapshot.json
 snapshot-*.json
 *.tmp
 
+# Local credentials and provider configuration
+.env
+.env.*
+!.env.example
+auth.json
+auth.json.bak*
+config.yaml
+config.yaml.bak*
+context_length_cache.yaml
+provider_models_cache.json
+models_dev_cache.json
+ollama_cloud_models_cache.json
+
+# Local agent databases, sessions and logs
+state.db
+state.db-*
+*.sqlite
+*.sqlite3
+*.jsonl
+!service/tests/fixtures/**/*.jsonl
+logs/
+*.log
+
+# Private keys, signing material and certificate containers
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+
 # PlatformIO and embedded build output
 .pio/
 
