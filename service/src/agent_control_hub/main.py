@@ -2,7 +2,10 @@
 
 import argparse
 import asyncio
+import os
+import sys
 import time
+import uuid
 from pathlib import Path
 
 from agent_control_hub.adapter_factory import AdapterSelection, build_adapter_selection
@@ -72,13 +75,38 @@ async def collect_snapshot(service: SnapshotService) -> bytes:
     return encode_snapshot(snapshot)
 
 
-def write_snapshot_file(path: Path, payload: bytes) -> None:
-    """Sustituye el JSON de salida sin dejar archivos parciales."""
+def write_snapshot_file(path: Path, payload: bytes) -> bool:
+    """Publica el JSON sin terminar el servicio ante bloqueos breves de Windows."""
 
+    # Garantiza que la carpeta de salida exista.
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(f".{path.name}.tmp")
+    # Utiliza un temporal único para evitar colisiones con ejecuciones anteriores.
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    # Escribe primero el contenido completo fuera del archivo servido.
     temporary_path.write_bytes(payload)
-    temporary_path.replace(path)
+    try:
+        # Reintenta el reemplazo cuando WAMP, antivirus o navegador bloquean el destino.
+        for attempt in range(8):
+            try:
+                # Sustituye el snapshot de forma atómica cuando Windows lo permite.
+                os.replace(temporary_path, path)
+                # Informa de que la iteración se publicó correctamente.
+                return True
+            except PermissionError:
+                # Conserva el snapshot anterior cuando se agotan los intentos.
+                if attempt == 7:
+                    return False
+                # Aplica una espera progresiva y acotada antes de reintentar.
+                time.sleep(min(0.05 * (attempt + 1), 0.25))
+        # Mantiene una salida explícita para el analizador estático.
+        return False
+    finally:
+        # Elimina el temporal si el reemplazo no llegó a consumirlo.
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            # Un bloqueo externo del temporal no debe terminar el servicio.
+            pass
 
 
 def main(args: argparse.Namespace) -> int:
@@ -103,8 +131,13 @@ def main(args: argparse.Namespace) -> int:
             payload = asyncio.run(collect_snapshot(service))
             if transport is not None:
                 transport.send(payload)
-            if args.output is not None:
-                write_snapshot_file(args.output, payload)
+            if args.output is not None and not write_snapshot_file(args.output, payload):
+                # Conserva la última captura válida y continúa con la siguiente iteración.
+                print(
+                    "[AVISO] snapshot.json está temporalmente bloqueado; "
+                    "se conserva la última captura válida.",
+                    file=sys.stderr,
+                )
             print(payload.decode("utf-8"), end="")
             if args.once:
                 break

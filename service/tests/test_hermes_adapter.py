@@ -322,3 +322,138 @@ def test_reports_offline_when_state_database_is_missing(tmp_path: Path) -> None:
     assert snapshot.status_reason == "state_db_unavailable"
     # Garantiza que el adaptador no creó la carpeta.
     assert not hermes_home.exists()
+
+
+# Valida que mensajes extensos no conviertan Hermes en offline por validación.
+def test_truncates_long_messages_to_public_contract(tmp_path: Path) -> None:
+    """Acota objetivo, resultado y actividad antes de construir modelos Pydantic."""
+
+    # Crea una carpeta Hermes aislada.
+    hermes_home = tmp_path / "hermes"
+    # Prepara la carpeta de datos.
+    hermes_home.mkdir()
+    # Crea el esquema temporal.
+    connection = _create_database(hermes_home / "state.db")
+    # Define una sesión reciente.
+    now = time.time()
+    # Inserta la sesión de prueba.
+    _insert_session(connection, now - 10, title="Prueba de respuesta extensa")
+    # Inserta una solicitud mayor que el límite de display_name.
+    connection.execute(
+        """
+        INSERT INTO messages (
+            session_id, role, content, timestamp, finish_reason, active, compacted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "20260724_113225_5c7a60",
+            "user",
+            "SOLICITUD_EXTENSA_" + ("x" * 700),
+            now - 5,
+            None,
+            1,
+            0,
+        ),
+    )
+    # Inserta una respuesta mayor que el límite de last_result y actividad.
+    connection.execute(
+        """
+        INSERT INTO messages (
+            session_id, role, content, timestamp, finish_reason, active, compacted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "20260724_113225_5c7a60",
+            "assistant",
+            "RESPUESTA_EXTENSA_" + ("y" * 700),
+            now,
+            "stop",
+            1,
+            0,
+        ),
+    )
+    # Guarda los cambios.
+    connection.commit()
+    # Cierra la conexión de preparación.
+    connection.close()
+
+    # Ejecuta el adaptador con una sonda determinista.
+    snapshot = asyncio.run(
+        HermesAdapter(
+            hermes_home=hermes_home,
+            gateway_probe=lambda: "stopped",
+        ).collect()
+    )
+
+    # Confirma que la sesión no se degrada a offline.
+    assert snapshot.status == AgentState.COMPLETED
+    # Confirma que la tarea se ha construido.
+    assert snapshot.task is not None
+    # Respeta el máximo público del nombre visible.
+    assert snapshot.task.display_name is not None
+    assert len(snapshot.task.display_name) <= 180
+    # Respeta el máximo público del objetivo.
+    assert snapshot.task.objective is not None
+    assert len(snapshot.task.objective) <= 500
+    # Respeta el máximo público del resultado.
+    assert snapshot.task.last_result is not None
+    assert len(snapshot.task.last_result) <= 220
+    # Todas las actividades respetan el mismo contrato.
+    assert all(
+        item.summary is None or len(item.summary) <= 220 for item in snapshot.recent_activity
+    )
+
+
+# Valida que una salida extensa de herramienta permanece observable.
+def test_truncates_long_tool_result_without_losing_working_state(tmp_path: Path) -> None:
+    """Publica tool_result_pending y acota la salida extensa de terminal."""
+
+    # Crea una carpeta Hermes aislada.
+    hermes_home = tmp_path / "hermes"
+    # Prepara la carpeta de datos.
+    hermes_home.mkdir()
+    # Crea el esquema temporal.
+    connection = _create_database(hermes_home / "state.db")
+    # Define una sesión reciente.
+    now = time.time()
+    # Inserta la sesión de prueba.
+    _insert_session(connection, now - 10, title="Prueba de herramienta extensa")
+    # Inserta el resultado de terminal todavía pendiente de respuesta final.
+    connection.execute(
+        """
+        INSERT INTO messages (
+            session_id, role, content, tool_name, timestamp, finish_reason, active, compacted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "20260724_113225_5c7a60",
+            "tool",
+            "HERMES_TOOL_START " + ("z" * 700) + " HERMES_TOOL_END",
+            "terminal",
+            now,
+            None,
+            1,
+            0,
+        ),
+    )
+    # Guarda los cambios.
+    connection.commit()
+    # Cierra la conexión de preparación.
+    connection.close()
+
+    # Ejecuta el adaptador.
+    snapshot = asyncio.run(
+        HermesAdapter(
+            hermes_home=hermes_home,
+            gateway_probe=lambda: "running",
+        ).collect()
+    )
+
+    # Mantiene el estado de trabajo mientras Hermes procesa el resultado.
+    assert snapshot.status == AgentState.WORKING
+    # Expone la causa normalizada correspondiente.
+    assert snapshot.status_reason == "tool_result_pending"
+    # Publica la actividad sin superar el contrato.
+    assert snapshot.recent_activity
+    assert snapshot.recent_activity[0].summary is not None
+    assert len(snapshot.recent_activity[0].summary) <= 220
