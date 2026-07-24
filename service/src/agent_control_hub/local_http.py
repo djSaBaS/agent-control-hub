@@ -2,15 +2,18 @@
 
 # Importa argparse para ofrecer una interfaz de línea de comandos controlada.
 import argparse
+
 # Importa códigos HTTP normalizados para evitar valores mágicos.
 from http import HTTPStatus
+
 # Importa las clases estándar utilizadas por el servidor HTTP local.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 # Importa Path para resolver los archivos públicos sin concatenaciones inseguras.
 from pathlib import Path
+
 # Importa urlsplit para separar la ruta de parámetros y fragmentos.
 from urllib.parse import urlsplit
-
 
 # Define los únicos recursos que el servidor puede publicar.
 _ALLOWED_FILES: dict[str, tuple[str, str]] = {
@@ -35,21 +38,21 @@ class LocalViewerRequestHandler(BaseHTTPRequestHandler):
     viewer_directory = Path(".")
 
     # Sirve peticiones GET permitidas.
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         """Devuelve el recurso solicitado cuando forma parte de la lista cerrada."""
 
         # Procesa la petición incluyendo el cuerpo de la respuesta.
         self._serve_request(include_body=True)
 
     # Sirve peticiones HEAD permitidas.
-    def do_HEAD(self) -> None:  # noqa: N802
+    def do_HEAD(self) -> None:
         """Devuelve únicamente cabeceras para comprobaciones locales."""
 
         # Procesa la petición sin transferir el cuerpo.
         self._serve_request(include_body=False)
 
     # Rechaza expresamente peticiones POST.
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         """Impide utilizar el visor como receptor de datos o comandos."""
 
         # Devuelve el código estándar de método no permitido.
