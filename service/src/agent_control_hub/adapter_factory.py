@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from agent_control_hub.adapters import (
     CodexAdapter,
     CopilotAdapter,
+    HermesAdapter,
     MockAdapter,
     PlatformAdapter,
 )
@@ -24,6 +25,7 @@ _ADAPTER_FACTORIES: dict[str, Callable[[], PlatformAdapter]] = {
     "mock": MockAdapter,
     "codex": CodexAdapter,
     "copilot": CopilotAdapter,
+    "hermes": HermesAdapter,
 }
 
 

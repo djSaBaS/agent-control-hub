@@ -88,7 +88,7 @@ if (-not (Test-Path $ViewerSource)) {
     throw "No se encuentra el visor local en $ViewerSource"
 }
 if (-not (Test-Path $ConfigPath)) {
-    throw "No se encuentra la configuración de Codex en $ConfigPath"
+    throw "No se encuentra la configuración de plataformas en $ConfigPath"
 }
 
 # Crea un entorno Python aislado con cualquier versión compatible instalada.
@@ -140,8 +140,9 @@ if (-not $DoNotOpenBrowser) {
 }
 
 # Ejecuta la misma aplicación que alimentará posteriormente el dispositivo físico.
-Write-Host "[4/4] Leyendo datos reales de Codex..." -ForegroundColor Cyan
-Write-Host "Fuente: $HOME\.codex\sessions" -ForegroundColor DarkGray
+Write-Host "[4/4] Leyendo datos reales de Codex y Hermes..." -ForegroundColor Cyan
+Write-Host "Codex:  $HOME\.codex\sessions" -ForegroundColor DarkGray
+Write-Host "Hermes: $env:LOCALAPPDATA\hermes\state.db" -ForegroundColor DarkGray
 Write-Host "JSON:   $SnapshotPath" -ForegroundColor DarkGray
 Write-Host "Web:    $PreviewUrl" -ForegroundColor DarkGray
 if (-not $Once) {

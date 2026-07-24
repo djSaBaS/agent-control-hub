@@ -1,4 +1,4 @@
-# Vista en PC con datos reales de Codex
+# Vista en PC con datos reales de Codex y Hermes
 
 ## Flujo comprobado
 
@@ -8,13 +8,17 @@
                   CodexAdapter
                          ↓
                   SnapshotService
+                         ↑
+                  HermesAdapter
+                         ↑
+%LOCALAPPDATA%\hermes\state.db
                          ↓
               snapshot.json sanitizado
                          ↓
                  Visor web local
 ```
 
-Los JSONL originales no se copian a WAMP. Solo se publica el modelo normalizado y una referencia relativa al archivo de origen.
+Los JSONL y la base SQLite originales no se copian a WAMP. Solo se publica el modelo normalizado, sanitizado y limitado.
 
 ## Información principal
 
@@ -22,18 +26,22 @@ El visor prioriza la información operativa:
 
 - Estado real: inactivo, trabajando, esperando, completado, error o sin conexión.
 - Causa del estado y mensaje breve.
-- Proyecto obtenido desde `session_meta.payload.cwd`, reducido a un alias seguro.
-- Sesión, origen, versión de la CLI y última actividad.
+- Proyecto reducido a un alias seguro cuando la fuente contiene `cwd`.
+- Sesión, origen y última actividad.
 - Conversación o título oficial cuando la fuente lo incluye.
-- Objetivo real de trabajo separado del título de conversación.
-- Actividad actual separada del último resultado técnico.
-- Pendiente o bloqueo operativo extraído del último mensaje cuando está etiquetado.
+- Objetivo o última solicitud separados del título de conversación.
+- Actividad actual separada del último resultado.
+- Pendiente o bloqueo operativo cuando existe evidencia explícita.
 - Actividad reciente: herramientas, comandos, parches, pruebas, resultados y errores.
-- Cuotas, duración de cada ventana y fecha de reinicio.
+- Modelo y proveedor asociados a la sesión.
+- Estado del gateway, contadores operativos, cron y coste cuando la plataforma los ofrece.
+- Cuotas y fecha de reinicio cuando existe una fuente oficial.
 
-La tarea principal no se presenta como subagente. Los agentes permanecerán vacíos hasta que existan eventos explícitos que permitan identificarlos.
+La tarea principal no se presenta como subagente. Los agentes permanecen vacíos hasta que existan eventos o sesiones hijas que permitan identificarlos sin inferencias.
 
-## Conversación, objetivo y resultado
+## Codex
+
+### Conversación, objetivo y resultado
 
 El modelo `TaskInfo` diferencia cinco conceptos:
 
@@ -54,7 +62,7 @@ Los envoltorios internos que contienen frases como `Continue working toward the 
 
 Un límite agotado modifica el estado actual, pero no sustituye `last_result`. Así el visor puede mostrar a la vez que Codex está esperando cuota y que la última regresión terminó correctamente.
 
-## Consumo
+### Consumo de Codex
 
 El panel **Diagnóstico de consumo** separa:
 
@@ -67,7 +75,7 @@ El contexto es una estimación y aparece identificado como tal. El acumulado del
 
 `tokens_today` permanece como `null` porque el JSONL no permite asegurar qué parte del acumulado pertenece al día actual.
 
-## Lectura incremental
+### Lectura incremental de Codex
 
 Cada archivo mantiene un cursor en memoria con:
 
@@ -79,7 +87,7 @@ Cada archivo mantiene un cursor en memoria con:
 
 Después del primer análisis solo se leen los bytes añadidos. Si el archivo se trunca, se sustituye o rota, el estado se reconstruye desde el principio. La actividad se limita a doce elementos y las líneas JSON excesivamente grandes se omiten para proteger la memoria.
 
-## Máquina de estados
+### Máquina de estados de Codex
 
 - `task_started` activa `working`.
 - Una herramienta sin resultado mantiene `working` con `status_reason: tool_running`.
@@ -89,16 +97,72 @@ Después del primer análisis solo se leen los bytes añadidos. Si el archivo se
 - `idle` solo se utiliza cuando no existe tarea activa, bloqueo ni fallo.
 - `offline` indica que la carpeta local de sesiones no está disponible o que Codex no puede detectarse sin sesiones.
 
-## Seguridad
+## Hermes
+
+### Fuente SQLite
+
+`HermesAdapter` localiza la carpeta de datos en este orden:
+
+1. Variable `HERMES_HOME`.
+2. `%LOCALAPPDATA%\hermes` en Windows.
+3. `~/.hermes` como alternativa portable.
+
+La base `state.db` se abre mediante una URI SQLite con `mode=ro`. Además se ejecuta `PRAGMA query_only = ON`. La conexión es efímera y compatible con el modo WAL utilizado por Hermes Desktop.
+
+El adaptador no consulta ni publica:
+
+- `.env`.
+- `auth.json`.
+- `config.yaml`.
+- `system_prompt`.
+- Razonamiento y campos internos de razonamiento.
+- Argumentos completos de herramientas.
+
+### Información extraída de Hermes
+
+De la sesión no archivada con actividad más reciente se obtienen:
+
+- Identificador y título real.
+- Origen TUI o plataforma declarada.
+- Modelo y proveedor guardados en `model_config`.
+- Inicio y última actividad.
+- Proyecto desde `cwd`, reducido al último segmento.
+- Contadores de mensajes, herramientas y llamadas API.
+- Tokens de entrada, salida, caché, escritura de caché y razonamiento.
+- Coste estimado o real y su estado.
+- Última solicitud y última respuesta sanitizadas.
+- Nombres de herramientas recientes sin argumentos.
+
+El cambio temporal de modelo queda aislado por sesión. El visor muestra el modelo almacenado en la sesión seleccionada y no el último modelo probado globalmente.
+
+### Estado de Hermes
+
+- El último mensaje de usuario sin respuesta posterior produce `working`.
+- Una respuesta con herramientas pendientes produce `working` con `tool_running`.
+- Un resultado de herramienta pendiente de continuación produce `working`.
+- Una respuesta final reciente produce `completed`.
+- Una respuesta final antigua mantiene la sesión como `idle`.
+- Un error de handoff o cierre con error produce `error`.
+- La ausencia de `state.db` produce `offline`.
+
+El estado del gateway se consulta mediante `hermes gateway status`, sin shell, con un tiempo máximo de tres segundos y una caché de treinta segundos. El gateway detenido no convierte Hermes en `offline`; solo indica que la integración de mensajería no está activa.
+
+### Contexto de Hermes
+
+El acumulado de tokens de sesión procede directamente de `state.db`. La caché se muestra como parte diferenciada de la entrada y no se suma dos veces al total.
+
+La ventana máxima del modelo se lee de forma opcional desde `context_length_cache.yaml`. El contexto usado no se estima porque `state.db` no contiene una métrica exacta equivalente a la barra de la interfaz TUI.
+
+## Seguridad común
 
 Antes de publicar texto se eliminan o sustituyen:
 
-- Rutas absolutas de Windows, Linux o macOS, incluidas rutas con espacios y nombre de archivo.
+- Rutas absolutas de Windows, Linux o macOS.
 - Correos electrónicos.
 - URLs.
 - Tokens con formato `sk-*`.
 - Valores asociados a claves, contraseñas y secretos.
-- Marcado interno y prompts extensos.
+- Marcado interno y textos excesivamente largos.
 
 El visor muestra un máximo acotado de texto por tarea y actividad. No procesa ni publica contenido de razonamiento.
 
@@ -111,13 +175,14 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\run-codex-preview.ps1
 ```
 
-El script:
+El nombre del script se conserva por compatibilidad, pero ahora:
 
 1. Prepara `service\.venv` con Python 3.11 o superior.
 2. Instala el servicio en modo editable.
 3. Copia el visor a `C:\wamp64\www\agent-control-hub`.
-4. Actualiza `snapshot.json` cada cinco segundos.
-5. Abre `http://localhost/agent-control-hub/`.
+4. Lee Codex y Hermes cada cinco segundos.
+5. Actualiza `snapshot.json` de forma atómica.
+6. Abre `http://localhost/agent-control-hub/`.
 
 Detén el proceso mediante `Ctrl+C`.
 
